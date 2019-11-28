@@ -8,6 +8,8 @@ from torchvision import transforms
 from trainer import *
 
 def main(config):
+  np.set_printoptions(precision=4)
+
   if config.dataset == 'mnist':
     import models.mnist as nets
     trans = transforms.ToTensor()
@@ -59,4 +61,7 @@ if __name__ == '__main__':
   config = parser.parse_args()
   print(config)
 
+  # Fix random seeds.
+  np.random.seed(2333)
+  torch.manual_seed(2333)
   main(config)

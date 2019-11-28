@@ -99,6 +99,8 @@ class BlahutArimoto:
     return f, post_dist
 
 class ImbalanceSampler:
+  'Make an imbalanced dataset by deleting something.'
+
   def __init__(self, dataset, sample_probs):
     self.imbalanced_dataset = copy.deepcopy(dataset)
 
@@ -109,10 +111,16 @@ class ImbalanceSampler:
     self.imbalanced_dataset.data = np.delete(dataset.data, idx_to_del, axis=0)
 
   def ImbalancedDataset(self):
-    'Report the imbalanced class distribution of the dataset.'
+    'Return the imbalanced dataset and it\'s distribution.'
     label, counts = np.unique(self.imbalanced_dataset.targets, return_counts=True)
     imbalanced_dist = counts / np.sum(counts)
     return self.imbalanced_dataset, imbalanced_dist
+
+class Logger:
+  'Log the numeric data during training process.'
+
+  def __init__(self, name: str):
+    self.name = name
 
 def weights_init(m):
   classname = m.__class__.__name__

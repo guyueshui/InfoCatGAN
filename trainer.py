@@ -67,18 +67,12 @@ class Trainer:
     """
     np.set_printoptions(precision=4)
     # Priori configurations.
-    # real_x = torch.FloatTensor(self.config.batch_size, 1, 28, 28)
-    # label = torch.FloatTensor(self.config.batch_size, 1)
     dis_c = torch.FloatTensor(self.config.batch_size, self.config.num_class).to(self.config.device)
     con_c = torch.FloatTensor(self.config.batch_size, 2).to(self.config.device)
     noise = torch.FloatTensor(self.config.batch_size, self.config.num_noise_dim).to(self.config.device)
 
     for i in [dis_c, con_c, noise]:
-      i.requires_grad = False
-
-    # dis_c = Variable(dis_c)
-    # con_c = Variable(con_c)
-    # noise = Variable(noise)
+      i.requires_grad_(True)
 
     criterionD = nn.BCELoss().to(self.config.device)
     criterionQ_dis = nn.CrossEntropyLoss().to(self.config.device)
@@ -87,13 +81,6 @@ class Trainer:
     optimD = optim.Adam([{'params': self.FD.parameters()}, {'params': self.D.parameters()}], lr=0.0002, betas=(0.5, 0.99))
     optimG = optim.Adam([{'params': self.FG.parameters()}, {'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
 
-    # dataset = dset.MNIST('../datasets', transform=transforms.ToTensor(), download=True)
-    # dataset = dset.STL10('../datasets', transform=transforms.Compose([
-    #   transforms.Resize(96),
-    #   transforms.CenterCrop(96),
-    #   transforms.ToTensor(),
-    #   transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
-    # ]))
     dataloader = DataLoader(self.dataset, batch_size=self.config.batch_size, shuffle=True, num_workers=1)
 
     # Fixed random variables.
@@ -191,6 +178,7 @@ class Trainer:
         # save_image(x_save.data, os.path.join(basepath, 'c2-epoch-{}.png'.format(epoch+1)), nrow=10)
         self._save_results(z, self.config.experiment_tag, 'c2-epoch-{}.png'.format(epoch+1))
 
+        # TODO: This is meaningless since category code must map to the correct ground truth label first.
         rmse = np.linalg.norm(cat_prob - true_dist)
-        print('Current cat dist: {}\nRMSE: {:.4f}'.format(cat_prob, mse))
+        print('Current cat dist: {}\nRMSE: {:.4f}'.format(cat_prob, rmse))
           
