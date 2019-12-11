@@ -1,33 +1,60 @@
 #!/opt/py36/bin/python
 
-import argparse
 import torch
-from torchvision import datasets
-from torchvision import transforms
+import numpy as np
+import matplotlib.pyplot as plt
+plt.style.use('ggplot')
 
-from trainer import *
+from trainer import Trainer
+from utils import weights_init, get_data, ImbalanceSampler
 
 def main(config):
-  np.set_printoptions(precision=4)
-
-  if config.dataset == 'mnist':
+  if config.dataset == 'MNIST':
     import models.mnist as nets
-    trans = transforms.ToTensor()
-    dataset = datasets.MNIST(config.data_root, transform=trans, download=True)
-  elif config.dataset == 'stl10':
+
+  elif config.dataset == 'FashionMNIST':
+    import models.mnist as nets
+
+  elif config.dataset == 'STL10':
     import models.stl10 as nets
-    trans = transforms.ToTensor()
-    dataset = datasets.STL10(config.data_root, transform=trans, download=True)
+
+  elif config.dataset == 'CelebA':
+    import models.celeba as nets
+    config.num_noise_dim = 128
+    config.num_dis_c = 10
+    config.num_class = 10
+    config.num_con_c = 0
+
+  # elif config.dataset == 'SVHN':
+  #   import models.svhn as nets
+  #   config.num_noise_dim = 124
+  #   config.num_dis_c = 4
+  #   config.num_class = 10
+  #   config.num_con_c = 4
+
   else:
     raise NotImplementedError
 
+  dataset = get_data(config.dataset, config.data_root)
+
   if config.imbalanced:
     sample_probs = np.random.rand(config.num_class)
+    idx = [i for i in range(10) if sample_probs[i] < 0.6]
+    sample_probs[idx] = 0.6 # Normalize lead to fewer samples, that's not good.
     ib = ImbalanceSampler(dataset, sample_probs)
     dataset, true_dist = ib.ImbalancedDataset()
     print("The imbalanced dist is: ", true_dist)
   else:
-    true_dist = config.cat_prob
+    true_dist = np.array([1 / config.num_class]).repeat(config.num_class)
+
+  if config.gpu == 0:  # GPU selection.
+    config.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+  elif config.gpu == 1:
+    config.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+  elif config.gpu == -1:
+    config.device = torch.device('cpu')
+  else:
+    raise IndexError('Invalid GPU index')
 
   fd = nets.FrontD()
   d = nets.D()
@@ -40,28 +67,49 @@ def main(config):
     i.to(config.device)
     i.apply(weights_init)
 
+  print(config)
   t = Trainer(config, dataset, fg, g, gt, fd, d, q)
-  t.train(config.cat_prob, true_dist)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(true_dist, true_dist)
+  
+  # Plotting losses...
+  plt.figure(figsize=(10, 5))
+  plt.title('GAN Loss')
+  plt.plot(Glosses, label='G', linewidth=1)
+  plt.plot(Dlosses, label='D', linewidth=1)
+  plt.xlabel('Iterations')
+  plt.ylabel('Loss')
+  plt.legend()
+  plt.savefig(t._savepath + '/gan_loss.png')
+  plt.close('all')
+
+  plt.figure(figsize=(10, 5))
+  plt.title('Entropy Loss')
+  plt.plot(EntQC_given_X, linewidth=1)
+  plt.xlabel('Iterations')
+  plt.ylabel('Loss')
+  plt.savefig(t._savepath + '/ent_loss.png')
+  plt.close('all')
+
+  if config.use_ba:
+    plt.figure(figsize=(10, 5))
+    plt.title('RMSE')
+    plt.plot(MSEs, linewidth=1)
+    plt.savefig(t._savepath + '/rmse.png')
+    plt.close('all')
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--num_epoch', type=int, default=100)
-  parser.add_argument('--num_class', type=int, default=10, help='Number of different categories.')
-  parser.add_argument('--num_noise_dim', type=int, default=62, help='Uncompressed noise dimension (i.e., dim of z) of the generator input.')
-  parser.add_argument('--batch_size', type=int, default=100)
-  parser.add_argument('--tiny', type=float, default=1e-6, help='Global precison.')
-  parser.add_argument('--dataset', type=str, default='mnist', help='The dataset to train.')
-  parser.add_argument('--data_root', type=str, default='../datasets')
-  parser.add_argument('--gpu', type=bool, default=True, help='Whether to use GPU.')
-  parser.add_argument('--device', default=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-  parser.add_argument('--use_ba', type=bool, default=False, help='Wether use BlahutArimoto algo.')
-  parser.add_argument('--imbalanced', type=bool, default=False, help='Wether use processed to be imbalanced.')
-  parser.add_argument('--cat_prob', default=np.array([0.1]).repeat(10), help='Default categorical distribution.')
-  parser.add_argument('--experiment_tag', type=str, default='unifc', help='Experiment tag that gives some meaningful info.')
-  config = parser.parse_args()
-  print(config)
+  ##############################
+  # Pre configs.
+  ##############################
+  from config import config
+  np.set_printoptions(precision=4)
 
   # Fix random seeds.
-  np.random.seed(2333)
-  torch.manual_seed(2333)
+  np.random.seed(config.seed)
+  torch.manual_seed(config.seed)
+
+  # initc = np.array([0.147, 0.037, 0.033, 0.143, 0.136, 0.114, 0.057, 0.112, 0.143, 0.078])
+  # initc /= np.sum(initc)
+  # config.cat_prob = initc
+
   main(config)

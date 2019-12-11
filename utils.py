@@ -1,6 +1,12 @@
 import torch
+import torchvision.transforms as transforms
+import torchvision.datasets as dsets
 import numpy as np
 import copy
+import matplotlib.pyplot as plt
+import time as t
+
+from config import config
 
 class Noiser:
   'Generate some noise for GAN\'s input.'
@@ -29,6 +35,7 @@ class Noiser:
     t.normal_(mean, std)
     return t.numpy()
 
+
 class BlahutArimoto:
   """
   The BA algorithm for computing optimal distribution of c1.
@@ -42,59 +49,76 @@ class BlahutArimoto:
   """
   def __init__(self, r: np.ndarray, channel: np.ndarray):
 
-    assert(r.size == channel.shape[0])
-    assert(abs(np.sum(r) - 1) < gTiny)
-    assert((abs(
-      np.sum(channel, axis=1) - np.ones(channel.shape[0])
-      ) < gTiny).all())
+    # assert(r.size == channel.shape[0])
+    # assert(abs(np.sum(r) - 1) < gTiny)
+    # assert((abs(
+    #   np.sum(channel, axis=1) - np.ones(channel.shape[0])
+    #   ) < gTiny).all())
 
-    self.input_dist = r                 # r(c): (1, 10)
+    # Ensure "self.input_dist > self.tiny" element-wise.
+    self.input_dist = np.clip(r, 1e-3, 1.0)        # r(c): (1, 10)
     self.transition = channel           # p(x|c): (10, 128)
-    # self.post_dist = np.zeros(shape=(   # q(c|x): (128, 10)
-    #   channel.shape[1], channel.shape[0]
-    # ))
-    self.num_cat = r.size
-    self.batch_size = channel.shape[1]
+    # self.post_dist                    # q(c|x): (128, 10)
+
+    self.in_channels = r.size
+    self.out_channels = channel.shape[1]
+    self.input_dist /= np.sum(self.input_dist)
 
   def Update(self, epsilon: float):
+    """
+    Note
+      epsilon should be at least 2 level less than the minimum of the
+      input dist (self.input_dist). Otherwise, BA algo will collapse.
+      
+      E.g., if min(self.input_dist) = 1e-17, then set 'epsilon < 1e-19'.
+    """
     from queue import Queue
     que = Queue(maxsize=2)
     que.put(0)
+    # print('==> Updating...')
     while True:
       cur_f, post_dist = self.Objective()
       que.put(cur_f)
+      # print('cur objective is {}'.format(cur_f))
       prev_f = que.get()
+
+      if cur_f < prev_f or cur_f < 0: # bad condition
+        print('cur input_dist: {:}, cur_f: {:>.6f}'.format(self.input_dist, cur_f))
+
       if abs(cur_f - prev_f) < epsilon:
         break
+    
     return self.input_dist, post_dist
     
   def Objective(self):
     # update q(c|x)
     post_dist = np.asarray([
       (self.input_dist * self.transition[:,i]).squeeze()
-      for i in range(self.transition.shape[1])
-    ]).reshape(self.batch_size, self.num_cat)
+      for i in range(self.out_channels)
+    ]).reshape(self.out_channels, self.in_channels)
 
-    for i in range(post_dist.shape[0]): # normalize
-      rowsum = np.sum(post_dist[i,:])
-      for j in range(post_dist.shape[1]):
-        post_dist[i][j] /= rowsum
+    factor = np.sum(post_dist, axis=1).reshape(-1, 1)
+    post_dist /= factor # normalize
 
     # compute objective
-    f = np.sum(
-      np.matmul(
-        np.matmul(self.input_dist, self.transition),
-        np.log2(post_dist / self.input_dist)
-      )
-    )
+    f = 0.0
+    for c in range(self.in_channels):
+      sumx = self.input_dist[c] * self.transition[c,:]
+      sumx *= np.log2(post_dist[:,c] / (self.input_dist[c] + 0.0))
+      f += np.sum(sumx)
+      # Or expand it to a loop.
+      # for x in range(self.out_channels):
+      #   f += (self.input_dist[c] * self.transition[c, x] * 
+      #         np.log2(post_dist[x, c] / self.input_dist[c]))
+    # assert(f > 0)
 
     # update r(c)
     logrc = np.asarray([
-      np.matmul(self.transition[i,:], post_dist[:,i])
-      for i in range(self.num_cat)
-    ]).reshape(1, -1)
+      np.sum(self.transition[c,:] * np.log2(post_dist[:,c]))
+      for c in range(self.in_channels)
+    ])
     self.input_dist = np.exp2(logrc)
-    self.input_dist = self.input_dist / np.sum(self.input_dist)
+    self.input_dist /= np.sum(self.input_dist) # normalize
 
     return f, post_dist
 
@@ -116,11 +140,43 @@ class ImbalanceSampler:
     imbalanced_dist = counts / np.sum(counts)
     return self.imbalanced_dataset, imbalanced_dist
 
-class Logger:
+
+class Reporter:
   'Log the numeric data during training process.'
 
   def __init__(self, name: str):
     self.name = name
+
+  def ReportGANLoss(self, losses: np.ndarray):
+    fig, ax = plt.subplots()
+    ax.plot()
+    
+
+
+class LogGaussian:
+  """
+  Calculate the negative log likelihood of normal distribution.
+  Treat Q(c|x) as a factored Gaussian.
+  Custom loss for Q network.
+  """
+  def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
+    logli = -0.5 * (var.mul(2*np.pi) + config.tiny).log() - \
+            (x-mu).pow(2).div(var.mul(2.0) + config.tiny)
+    return logli.sum(1).mean().mul(-1)
+
+
+class ETimer:
+  'A easy to use timer.'
+
+  def __init__(self):
+    self._start = t.time()
+
+  def reset(self):
+    self._start = t.time()
+
+  def elapsed(self):  # In seconds.
+    return t.time() - self._start
+
 
 def weights_init(m):
   classname = m.__class__.__name__
@@ -130,10 +186,50 @@ def weights_init(m):
     m.weight.data.normal_(1.0, 0.02)
     m.bias.data.fill_(0)
 
-gTiny = 1e-6
-class LogGaussian:
-  'Custom loss for Q network.'
-  def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
-    logli = -0.5 * (var.mul(2*np.pi) + gTiny).log() - \
-            (x-mu).pow(2).div(var.mul(2.0) + gTiny)
-    return logli.sum(1).mean().mul(-1)
+
+def get_data(dbname: str, data_root: str):
+  'Get training dataset.'
+
+  if dbname == 'MNIST':
+    transform = transforms.Compose([
+      transforms.Resize(28),
+      transforms.CenterCrop(28),
+      transforms.ToTensor()
+    ])
+
+    dataset = dsets.MNIST(data_root, train=True, download=True, transform=transform)
+
+  elif dbname == 'FashionMNIST':
+    transform = transforms.Compose([
+      transforms.Resize(28),
+      transforms.CenterCrop(28),
+      transforms.ToTensor()
+    ])
+
+    dataset = dsets.FashionMNIST(data_root, train=True, transform=transform, 
+                                 download=True)
+    
+  elif dbname == 'CelebA':
+    transform = transforms.Compose([
+      transforms.Resize(32),
+      transforms.CenterCrop(32),
+      transforms.ToTensor(),
+      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+    ])
+
+    dataset = dsets.CelebA(data_root, transform=transform, download=True)
+
+  elif dbname == 'STL10':
+    transform = transforms.Compose([
+      transforms.Resize(96),
+      transforms.CenterCrop(96),
+      transforms.ToTensor(),
+      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+    ])
+
+    dataset = dsets.STL10(data_root, transform=transform, download=True)
+  
+  else:
+    raise NotImplementedError
+
+  return dataset

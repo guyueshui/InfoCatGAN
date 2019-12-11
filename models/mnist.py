@@ -9,12 +9,12 @@ class FrontD(nn.Module):
     super(FrontD, self).__init__()
 
     self.main = nn.Sequential(
-      nn.Conv2d(1, 64, 4, 2, 1),
+      nn.Conv2d(1, 64, 4, 2, 1),                # 28x28 -> 14x14
       nn.LeakyReLU(0.1, inplace=True),
-      nn.Conv2d(64, 128, 4, 2, 1, bias=False),
+      nn.Conv2d(64, 128, 4, 2, 1, bias=False),  # 14x14 -> 7x7
       nn.BatchNorm2d(128),
       nn.LeakyReLU(0.1, inplace=True),
-      nn.Conv2d(128, 1024, 7, bias=False),
+      nn.Conv2d(128, 1024, 7, bias=False),      # 7x7 -> 1x1
       nn.BatchNorm2d(1024),
       nn.LeakyReLU(0.1, inplace=True),
     )
@@ -54,7 +54,7 @@ class Q(nn.Module):
 
   def forward(self, x):
 
-    y = self.conv(x)
+    y = self.lReLU(self.bn(self.conv(x)))
 
     disc_logits = self.conv_disc(y).squeeze()
 
@@ -87,29 +87,22 @@ class G(nn.Module):
     output = self.main(x)
     return output
 
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        m.weight.data.normal_(0.0, 0.02)
-    elif classname.find('BatchNorm') != -1:
-        m.weight.data.normal_(1.0, 0.02)
-        m.bias.data.fill_(0)
-
 class FrontG(nn.Module):
   def __init__(self):
     super(FrontG, self).__init__()
   
+    # torch.Size([bs, 74, 1, 1])
     self.main = nn.Sequential(
-      nn.ConvTranspose2d(74, 1024, 1, 1, bias=False),
+      nn.ConvTranspose2d(74, 1024, 1, 1, bias=False), # 1x1 -> 1x1
       nn.BatchNorm2d(1024),
       nn.ReLU(True),
-      nn.ConvTranspose2d(1024, 128, 7, 1, bias=False),
+      nn.ConvTranspose2d(1024, 128, 7, 1, bias=False),  # 1x1 -> 7x7
       nn.BatchNorm2d(128),
       nn.ReLU(True),
-      nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
+      nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False), # 7x7 -> 14x14
       nn.BatchNorm2d(64),
       nn.ReLU(True)
-    )
+    ) # torch.Size([bs, 64, 14, 14])
 
   def forward(self, input):
     output = self.main(input)
@@ -119,10 +112,12 @@ class Generator(nn.Module):
   def __init__(self):
     super(Generator, self).__init__()
 
+    # torch.Size([bs, 64, 14, 14])
     self.main = nn.Sequential(
-      nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False),
+      nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False),  # 14x14 -> 28x28
       nn.Sigmoid()
     )
+    # torch.Size([bs, 1, 28, 28])
   
   def forward(self, input):
     output = self.main(input)
@@ -133,13 +128,16 @@ class GTransProb(nn.Module):
 
   def __init__(self):
     super(GTransProb, self).__init__()
-    self.main = nn.Conv2d(64, 10, kernel_size=14, bias=False) # batch_size * 10 * 1 * 1
-    self.softmax = nn.Softmax(dim=0) # Each column sums to 1.
+    self.conv1 = nn.Conv2d(64, 10, kernel_size=14, bias=False) # batch_size * 10 * 1 * 1
+    self.bn1 = nn.BatchNorm2d(10)
+    self.lReLU1 = nn.LeakyReLU(0.1, inplace=True)
+    self.fc1 = nn.Linear(100, 10, bias=True)
+    self.softmax = nn.Softmax(dim=1) # Each row sums to 1.
   
   def forward(self, input):
-    output = self.main(input).view(-1, 10)
+    output = self.lReLU1(self.bn1(self.conv1(input))).view(10, -1)
+    output = self.fc1(output)
     output = self.softmax(output)
-    output.transpose_(0, 1)
     return output
 
 class Discriminator(nn.Module):
