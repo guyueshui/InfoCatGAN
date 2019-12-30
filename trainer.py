@@ -92,16 +92,6 @@ class Trainer:
       os.path.join(savepath, fname)
     )
 
-  def _compute_post(self, cat_prob, trans_prob):
-    cat_prob = torch.as_tensor(cat_prob, dtype=torch.float32)
-    post_dist = [(cat_prob * trans_prob[:,i])
-                 for i in range(trans_prob.size(1))]
-    post_dist = torch.cat(post_dist).view_as(trans_prob.transpose(1,0))
-
-    factor = torch.sum(post_dist, dim=1).view(-1, 1)
-    post_dist /= factor
-    return post_dist
-
   def train(self, cat_prob: np.ndarray, true_dist: np.ndarray):
     """
     @param cat_prob: initial categorical prob.
