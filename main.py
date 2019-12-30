@@ -10,13 +10,15 @@ from utils import weights_init, get_data, ImbalanceSampler
 
 def main(config):
   if config.dataset == 'MNIST':
-    import models.mnist as nets
+    import models.official_mnist as nets
 
   elif config.dataset == 'FashionMNIST':
-    import models.mnist as nets
+    import models.official_mnist as nets
 
   elif config.dataset == 'STL10':
     import models.stl10 as nets
+    config.num_noise_dim == 256
+    config.num_dis_c = 10
 
   elif config.dataset == 'CelebA':
     import models.celeba as nets
@@ -69,7 +71,7 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, fg, g, gt, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(true_dist, true_dist)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(config.cat_prob, true_dist)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))
@@ -108,8 +110,9 @@ if __name__ == '__main__':
   np.random.seed(config.seed)
   torch.manual_seed(config.seed)
 
-  # initc = np.array([0.147, 0.037, 0.033, 0.143, 0.136, 0.114, 0.057, 0.112, 0.143, 0.078])
-  # initc /= np.sum(initc)
-  # config.cat_prob = initc
+  # if config.use_ba or config.imbalanced:
+  #   initc = np.array([0.147, 0.037, 0.033, 0.143, 0.136, 0.114, 0.057, 0.112, 0.143, 0.078])
+  #   initc /= np.sum(initc)
+  #   config.cat_prob = initc
 
   main(config)

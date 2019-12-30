@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--num_epoch', type=int, default=100)
+parser.add_argument('--num_epoch', type=int, default=70)
 parser.add_argument('--num_class', type=int, default=10, help='Number of different categories.')
 parser.add_argument('--num_noise_dim', type=int, default=62, help='Uncompressed noise dimension (i.e., dim of z) of the generator input.')
 parser.add_argument('--batch_size', type=int, default=100)
@@ -16,11 +16,12 @@ parser.add_argument('--device', default=None, help='Delayed determined by gpu.')
 parser.add_argument('--use_ba', action='store_true', help='Wether to use BlahutArimoto algo.')
 parser.add_argument('--imbalanced', action='store_true', help='Wether to process the dataset to be imbalanced.')
 parser.add_argument('--cat_prob', default=np.array([0.1]).repeat(10), help='Default categorical distribution.')
-parser.add_argument('--seed', type=int, default=1, help='Random seed for reproduction.')
+parser.add_argument('--seed', type=int, default=0, help='Random seed for reproduction.')
 parser.add_argument('--experiment_tag', type=str, default='unifc', help='Experiment tag that gives some meaningful info.')
 parser.add_argument('--save_epoch', type=int, default=25, help='After how many epochs to save the checkpoint.')
 parser.add_argument('--num_dis_c', type=int, default=1, help='Number of categorical codes.')
 parser.add_argument('--num_con_c', type=int, default=2, help='Number of continous latent codes.')
 parser.add_argument('-f', help='For ipython debug.')
+parser.add_argument('--instance_noise', type=bool, default=True, help='Whether to use instance noise trick.')
 
 config = parser.parse_args()

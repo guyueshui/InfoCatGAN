@@ -5,6 +5,7 @@ import numpy as np
 import copy
 import matplotlib.pyplot as plt
 import time as t
+import imageio
 
 from config import config
 
@@ -76,6 +77,7 @@ class BlahutArimoto:
     que = Queue(maxsize=2)
     que.put(0)
     # print('==> Updating...')
+    num_iter = 0
     while True:
       cur_f, post_dist = self.Objective()
       que.put(cur_f)
@@ -85,8 +87,9 @@ class BlahutArimoto:
       if cur_f < prev_f or cur_f < 0: # bad condition
         print('cur input_dist: {:}, cur_f: {:>.6f}'.format(self.input_dist, cur_f))
 
-      if abs(cur_f - prev_f) < epsilon:
+      if num_iter > 200 or abs(cur_f - prev_f) < epsilon:
         break
+      num_iter += 1
     
     return self.input_dist, post_dist
     
@@ -141,18 +144,6 @@ class ImbalanceSampler:
     return self.imbalanced_dataset, imbalanced_dist
 
 
-class Reporter:
-  'Log the numeric data during training process.'
-
-  def __init__(self, name: str):
-    self.name = name
-
-  def ReportGANLoss(self, losses: np.ndarray):
-    fig, ax = plt.subplots()
-    ax.plot()
-    
-
-
 class LogGaussian:
   """
   Calculate the negative log likelihood of normal distribution.
@@ -184,6 +175,9 @@ def weights_init(m):
     m.weight.data.normal_(0.0, 0.02)
   elif classname.find('BatchNorm') != -1:
     m.weight.data.normal_(1.0, 0.02)
+    m.bias.data.fill_(0)
+  elif classname.find('Linear') != -1:
+    m.weight.data.normal_(0, 0.02)
     m.bias.data.fill_(0)
 
 
@@ -227,9 +221,13 @@ def get_data(dbname: str, data_root: str):
       transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
     ])
 
-    dataset = dsets.STL10(data_root, transform=transform, download=True)
+    dataset = dsets.STL10(data_root, transform=transform)
   
   else:
     raise NotImplementedError
 
   return dataset
+
+
+def generate_animation(path: str, images: list):
+  imageio.mimsave(path + '/' + 'generate_animation.gif', images, fps=5)

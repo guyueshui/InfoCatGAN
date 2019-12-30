@@ -8,7 +8,7 @@ class FrontG(nn.Module):
 
     # in: bs x (74 x 1 x 1)
     self.main = nn.Sequential(
-      nn.ConvTranspose2d(74, 1024, 1, 1), # out: 1024 x 1 x 1
+      nn.ConvTranspose2d(276, 1024, 1, 1), # out: 1024 x 1 x 1
       nn.BatchNorm2d(1024),
       nn.ReLU(inplace=True),
       nn.ConvTranspose2d(1024, 128, 12, 1), # out: 128 x 12 x 12
@@ -98,8 +98,8 @@ class Q(nn.Module):
     self.bn = nn.BatchNorm2d(128)
     self.lReLU = nn.LeakyReLU(0.1, inplace=True)
     self.conv_disc = nn.Conv2d(128, 10, 1)
-    self.conv_mu = nn.Conv2d(128, 2, 1)
-    self.conv_var = nn.Conv2d(128, 2, 1)
+    self.conv_mu = nn.Conv2d(128, 10, 1)
+    self.conv_var = nn.Conv2d(128, 10, 1)
 
   def forward(self, x):
 
