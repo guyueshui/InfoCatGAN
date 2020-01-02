@@ -6,8 +6,10 @@ import copy
 import matplotlib.pyplot as plt
 import time as t
 import imageio
+import math
 
 from config import config
+from torchvision.datasets import VisionDataset
 
 class Noiser:
   'Generate some noise for GAN\'s input.'
@@ -231,3 +233,35 @@ def get_data(dbname: str, data_root: str):
 
 def generate_animation(path: str, images: list):
   imageio.mimsave(path + '/' + 'generate_animation.gif', images, fps=5)
+
+
+# Add custom dataset for semisupervised training.
+class CustomDataset:
+  "Split the origin dataset into labeled and unlabeled by the given ratio."
+  def __init__(self, dset, supervised_ratio):
+    self.num_data = len(dset)
+    self.num_labeled_data = math.ceil(len(dset) * supervised_ratio)
+    self.num_unlabeled_data = self.num_data - self.num_labeled_data
+
+    self.labeled_data = copy.deepcopy(dset)
+    self.labeled_data.data = dset.data[:self.num_labeled_data]
+    self.labeled_data.targets = dset.targets[:self.num_labeled_data]
+
+    self.unlabeled_data = copy.deepcopy(dset)
+    self.unlabeled_data.data = dset.data[self.num_labeled_data:]
+  
+  @property
+  def labeled(self):
+    return self.labeled_data
+
+  @property
+  def unlabeled(self):
+    return self.unlabeled_data
+
+  def report(self):
+    print('-'*25)
+    print('Origin dataset has {} samples'.format(self.num_data))
+    print('Now splitted into {} labeled/ {} unlabeled'
+          .format(self.num_labeled_data, self.num_unlabeled_data))
+    print('-'*25)
+    

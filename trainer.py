@@ -5,27 +5,21 @@ import torch.optim as optim
 import numpy as np
 
 from torch.utils.data import DataLoader
-from utils import BlahutArimoto, Noiser, LogGaussian, ETimer, generate_animation
-
-torch.set_default_tensor_type(torch.FloatTensor)
+from utils import BlahutArimoto, Noiser, LogGaussian, ETimer, generate_animation, CustomDataset
 
 class Trainer:
-  def __init__(self, config, dataset, FG, G, GT, FD, D, Q):
+  def __init__(self, config, dataset, G, FD, D, Q, Qsuper):
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
 
     self.config = config
     self.dataset = dataset
 
-    self.FG = FG
     self.G = G 
-    self.GT = GT
     self.FD = FD
     self.D = D
     self.Q = Q
-
-    from models.official_mnist import Qsemi
-    self.Qsemi = Qsemi().to(self.config.device)
+    self.Qsuper = Qsuper
 
     savepath = os.path.join(os.getcwd(), 'results', 
                             config.dataset, config.experiment_tag)
@@ -67,7 +61,7 @@ class Trainer:
   def _save_image(self, noise, fname: str):
     from PIL import Image
     from torchvision.utils import make_grid
-    tensor = self.G(self.FG(noise))
+    tensor = self.G(noise)
     grid = make_grid(tensor, nrow=10, padding=2)
     # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
     ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
@@ -81,12 +75,11 @@ class Trainer:
       os.makedirs(savepath)
     torch.save(
       {
-        'FrontG': self.FG.state_dict(),
         'Generator': self.G.state_dict(),
-        'GTrans': self.GT.state_dict(),
         'FrontD': self.FD.state_dict(),
         'Discriminator': self.D.state_dict(),
         'Q': self.Q.state_dict(),
+        'Qsuper': self.Qsuper.state_dict(),
         'params': self.config.__dict__
       },
       os.path.join(savepath, fname)
@@ -290,6 +283,203 @@ class Trainer:
       # # Saving checkpoint.
       # if (epoch+1) % self.config.save_epoch == 0:
       #   self._save_checkpoint('model-epoch-{}.pt'.format(epoch+1))
+
+    # Training finished.
+    training_time = t0.elapsed()
+    print('-'*50)
+    print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
+    print('-'*50)
+    generate_animation(self._savepath, generated_images)
+
+    # Manipulating continuous latent codes.
+    self._save_image(fixed_noise_1, 'c1-final.png')
+    self._save_image(fixed_noise_2, 'c2-final.png')
+
+    # Save the final model and losses.
+    self._save_checkpoint('model-final.pt')
+    np.savez(os.path.join(self._savepath, 'loss.npz'), Gloss=Glosses, Dloss=Dlosses, EntQ=EntQC_given_X, MSE=MSEs)
+    return Glosses, Dlosses, EntQC_given_X, MSEs 
+
+  def ss_train(self, cat_prob):
+    torch.set_default_tensor_type(torch.FloatTensor)
+    np.set_printoptions(precision=4)
+    torch.manual_seed(self.config.seed)
+    np.random.seed(self.config.seed)
+
+    # Used to log numeric data.
+    Glosses = []
+    Dlosses = []
+    EntQC_given_X = []
+    MSEs = []
+    generated_images = []
+    supervised_ratio = 0.0022
+
+    bs = self.config.batch_size
+    dv = self.config.device
+
+    z = torch.FloatTensor(bs, self.config.num_noise_dim).to(dv)
+    disc_c = torch.FloatTensor(bs, self.config.num_class).to(dv)
+    cont_c = torch.FloatTensor(bs, self.config.num_con_c).to(dv)
+    real_label = 1
+    fake_label = 0
+
+    criterionD = nn.BCELoss().to(dv)
+    criterionQ_dis = nn.CrossEntropyLoss().to(dv)
+    criterionQ_con = LogGaussian()
+    
+    optimD = optim.Adam([{'params': self.FD.parameters()}, {'params': self.D.parameters()}], lr=0.0002, betas=(0.5, 0.99))
+    optimG = optim.Adam([{'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
+    optimQsuper = optim.Adam(self.Qsuper.parameters(), lr=0.001, betas=(0.5, 0.99))
+
+    dset = CustomDataset(self.dataset, supervised_ratio)
+    dset.report()
+    labeled_loder = DataLoader(dset.labeled, batch_size=bs, shuffle=True, num_workers=1)
+    labeled_iter = iter(labeled_loder)
+    unlabeled_loder = DataLoader(dset.unlabeled, batch_size=bs, shuffle=True, num_workers=1)
+    unlabeled_iter = iter(unlabeled_loder)
+
+    # Fixed random variables.
+    fixz, cdis, c1, c2, c0 = self._fix_noise()
+    fixed_noise_0 = np.hstack([fixz, cdis, c0])
+    fixed_noise_1 = np.hstack([fixz, cdis, c1])
+    fixed_noise_2 = np.hstack([fixz, cdis, c2])
+    # NOTE: dtype should exactly match the network weight's type!
+    fixed_noise_0 = torch.as_tensor(fixed_noise_0, dtype=torch.float32).view(100, -1, 1, 1).to(dv)
+    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(100, -1, 1, 1).to(dv)
+    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).view(100, -1, 1, 1).to(dv)
+
+    # Training...
+    print('-'*25)
+    print('Starting Training Loop...\n')
+    print('Epochs: {}\nDataset: {}\nBatch size: {}\nLength of Dataloder: {}'
+          .format(self.config.num_epoch, self.config.dataset, 
+                  self.config.batch_size, 100))
+    print('-'*25)
+
+    t0 = ETimer() # train timer
+    t1 = ETimer() # epoch timer
+    supervised_prob = 0.99
+    tot_iters = 100
+
+    for epoch in range(self.config.num_epoch):
+      t1.reset()
+      num_labeled_batch = 0
+      for num_iter in range(tot_iters):
+        #
+        # Train discriminator.
+        #
+        optimD.zero_grad()
+        # Real part.
+        cur_batch = None
+        # Biased coin toss to decide if we sampling from labeled or unlabeled data.
+        is_labeled_batch = (torch.bernoulli(torch.tensor(supervised_prob)) == 1)
+        if is_labeled_batch:
+          cur_batch = next(labeled_iter)
+          num_labeled_batch += 1
+        else:
+          cur_batch = next(unlabeled_iter)
+
+        if not cur_batch or cur_batch[0].size(0) != bs:
+          if is_labeled_batch:
+            labeled_iter = iter(labeled_loder)
+            cur_batch = next(labeled_iter)
+            num_labeled_batch += 1
+          else:
+            unlabeled_iter = iter(unlabeled_loder)
+            cur_batch = next(unlabeled_iter)
+
+        image, y = cur_batch
+        image = image.to(dv)
+
+        # Guided by https://github.com/soumith/ganhacks#13-add-noise-to-inputs-decay-over-time
+        # This may be helpful for generator convergence.
+        if self.config.instance_noise:
+          instance_noise = torch.zeros_like(image)
+          std = -0.1 / tot_iters * num_iter + 0.1
+          instance_noise.normal_(0, std)
+          image = image + instance_noise
+
+        dbody_out_real = self.FD(image)
+        prob_real = self.D(dbody_out_real)
+        label = torch.full_like(prob_real, real_label, device=dv)
+        loss_real = criterionD(prob_real, label)
+        loss_real.backward()
+
+        if is_labeled_batch:
+          optimQsuper.zero_grad()
+          disc_logits_real = self.Qsuper(dbody_out_real.detach())
+          qsemi_loss_real = criterionQ_dis(disc_logits_real, y.to(dv)) * 2
+          qsemi_loss_real.backward()
+          optimQsuper.step()
+
+        # Fake part.
+        noise, idx = self._sample(z, disc_c, cont_c, cat_prob, bs)
+        fake_image = self.G(noise)
+
+        ## Add instance noise if specified.
+        if self.config.instance_noise:
+          print('o i am using instance noise')
+          fake_image = fake_image + instance_noise
+
+        dbody_out_fake = self.FD(fake_image.detach())
+        prob_fake = self.D(dbody_out_fake)
+        label.fill_(fake_label)
+        loss_fake = criterionD(prob_fake, label)
+        loss_fake.backward()
+
+        ## update
+        D_loss = loss_real + loss_fake
+        optimD.step()
+        
+        #
+        # Train generator.
+        #
+        optimG.zero_grad()
+        # NOTE: why bother to get a new output of FD? cause FD is updated by optimizing Discriminator.
+        dbody_out = self.FD(fake_image)
+        prob_fake = self.D(dbody_out)
+        label.fill_(real_label)
+        reconstruct_loss = criterionD(prob_fake, label)
+
+        q_logits, q_mu, q_var = self.Q(dbody_out)
+        targets = torch.LongTensor(idx).to(self.config.device)
+        dis_loss = criterionQ_dis(q_logits, targets) * 0.8
+        con_loss = criterionQ_con(cont_c, q_mu, q_var) * 0.2 # weight
+
+        # Info flows from Qsuper to G.
+        # if is_labeled_batch:
+        if True:
+          disc_logits_fake = self.Qsuper(dbody_out) 
+          qsemi_loss_fake = criterionQ_dis(disc_logits_fake, targets) * 2
+        else:
+          qsemi_loss_fake = 0.0
+        
+        ## update parameters
+        G_loss = reconstruct_loss + dis_loss + con_loss + qsemi_loss_fake
+        G_loss.backward()
+        optimG.step()
+        
+        if (num_iter+1) % 10 == 0:
+          print('Epoch: ({:3.0f}/{:3.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
+          .format(epoch+1, self.config.num_epoch, num_iter+1, tot_iters, 
+          D_loss.cpu().detach().numpy(), G_loss.cpu().detach().numpy())
+          )
+
+        Dlosses.append(D_loss.cpu().detach().item())
+        Glosses.append(G_loss.cpu().detach().item())
+
+      # Report epoch training time.
+      epoch_time = t1.elapsed()
+      print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
+      print('labeled batch for Epoch %d: %d/%d' % (epoch+1, num_labeled_batch, tot_iters))
+      if supervised_prob > supervised_ratio:
+        supervised_prob -= 0.1
+      if supervised_prob < supervised_ratio:
+        supervised_prob = supervised_ratio
+
+      if (epoch+1) % 2 == 0:
+        img = self._save_image(fixed_noise_1, 'c0-epoch-{}.png'.format(epoch+1))
+        generated_images.append(img)
 
     # Training finished.
     training_time = t0.elapsed()
