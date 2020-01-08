@@ -204,6 +204,17 @@ def get_data(dbname: str, data_root: str):
 
     dataset = dsets.FashionMNIST(data_root, train=True, transform=transform, 
                                  download=True)
+
+  elif dbname == "CIFAR10":
+    transform = transforms.Compose([
+      transforms.Resize(32),
+      transforms.CenterCrop(32),
+      transforms.ToTensor(),
+      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+    ])
+    
+    dataset = dsets.CIFAR10(data_root, train=True, transform=transform, 
+                            download=True)
     
   elif dbname == 'CelebA':
     transform = transforms.Compose([

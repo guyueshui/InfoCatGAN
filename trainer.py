@@ -312,7 +312,7 @@ class Trainer:
     EntQC_given_X = []
     MSEs = []
     generated_images = []
-    supervised_ratio = 0.0022
+    supervised_ratio = 0.5
 
     bs = self.config.batch_size
     dv = self.config.device
@@ -358,12 +358,15 @@ class Trainer:
 
     t0 = ETimer() # train timer
     t1 = ETimer() # epoch timer
-    supervised_prob = 0.99
-    tot_iters = 100
+    supervised_prob = 0.05
 
     for epoch in range(self.config.num_epoch):
       t1.reset()
       num_labeled_batch = 0
+      if supervised_prob >= 0.1:
+        tot_iters = 100
+      else:
+        tot_iters = len(unlabeled_loder) + len(labeled_loder)
       for num_iter in range(tot_iters):
         #
         # Train discriminator.
@@ -418,7 +421,7 @@ class Trainer:
 
         ## Add instance noise if specified.
         if self.config.instance_noise:
-          print('o i am using instance noise')
+          # instance_noise.normal_(0, std)  # Regenerate instance noise!
           fake_image = fake_image + instance_noise
 
         dbody_out_fake = self.FD(fake_image.detach())
@@ -459,7 +462,7 @@ class Trainer:
         G_loss.backward()
         optimG.step()
         
-        if (num_iter+1) % 10 == 0:
+        if (num_iter+1) % 50 == 0:
           print('Epoch: ({:3.0f}/{:3.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
           .format(epoch+1, self.config.num_epoch, num_iter+1, tot_iters, 
           D_loss.cpu().detach().numpy(), G_loss.cpu().detach().numpy())
@@ -472,14 +475,17 @@ class Trainer:
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
       print('labeled batch for Epoch %d: %d/%d' % (epoch+1, num_labeled_batch, tot_iters))
-      if supervised_prob > supervised_ratio:
-        supervised_prob -= 0.1
-      if supervised_prob < supervised_ratio:
-        supervised_prob = supervised_ratio
+      # if supervised_prob > 0.01:
+      #   supervised_prob -= 0.1
+      # if supervised_prob < 0.01:
+      #   supervised_prob = 0.01
 
       if (epoch+1) % 2 == 0:
         img = self._save_image(fixed_noise_1, 'c0-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
+
+      if (epoch+1) % self.config.save_epoch == 0:
+        self._save_checkpoint('model-epoch-{}.pt'.format(epoch+1))
 
     # Training finished.
     training_time = t0.elapsed()
@@ -495,4 +501,4 @@ class Trainer:
     # Save the final model and losses.
     self._save_checkpoint('model-final.pt')
     np.savez(os.path.join(self._savepath, 'loss.npz'), Gloss=Glosses, Dloss=Dlosses, EntQ=EntQC_given_X, MSE=MSEs)
-    return Glosses, Dlosses, EntQC_given_X, MSEs 
+    return Glosses, Dlosses, EntQC_given_X, MSEs

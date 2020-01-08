@@ -2,13 +2,39 @@
 
 import torch.nn as nn
 
-class FrontG(nn.Module):
-  def __init__(self):
-    super(FrontG, self).__init__()
+class G(nn.Module):
+  def __init__(self, indim=140, outdim=3):
+    super(G, self).__init__()
+    self.indim = indim
+    self.outdim = outdim
 
-    # in: bs x (74 x 1 x 1)
+    # in: bs x (indim x 1 x 1)
     self.main = nn.Sequential(
-      nn.ConvTranspose2d(74, 1024, 1, 1), # out: 1024 x 1 x 1
+      nn.ConvTranspose2d(self.indim, 1024, 1, 1), # out: 1024 x 1 x 1
+      nn.BatchNorm2d(1024),
+      nn.ReLU(inplace=True),
+      nn.ConvTranspose2d(1024, 128, 8, 1), # out: 128 x 8 x 8
+      nn.BatchNorm2d(128),
+      nn.ReLU(True),
+      nn.ConvTranspose2d(128, 64, 4, 2, 1), # out: 64 x 16 x 16
+      nn.BatchNorm2d(64),
+      nn.ReLU(True),
+      nn.ConvTranspose2d(64, self.outdim, 4, 2, 1), # out: 3 x 32 x 32
+      nn.Sigmoid()
+    )
+  
+  def forward(self, x):
+    x = self.main(x)
+    return x
+
+class FrontG(nn.Module):
+  def __init__(self, indim=74):
+    super(FrontG, self).__init__()
+    self.indim = indim
+
+    # in: bs x (indim x 1 x 1)
+    self.main = nn.Sequential(
+      nn.ConvTranspose2d(self.indim, 1024, 1, 1), # out: 1024 x 1 x 1
       nn.BatchNorm2d(1024),
       nn.ReLU(inplace=True),
       nn.ConvTranspose2d(1024, 128, 8, 1), # out: 128 x 8 x 8
@@ -105,3 +131,19 @@ class Q(nn.Module):
     var = self.conv_var(y).squeeze().exp()
 
     return disc_logits, mu, var 
+
+class Qsemi(nn.Module):
+  def __init__(self, outdim=10):
+    super(Qsemi, self).__init__()
+    self.outdim = outdim
+    
+    self.main = nn.Sequential(
+      nn.Conv2d(1024, 128, 1, bias=False),
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.1, inplace=True),
+      nn.Conv2d(128, 10, 1),
+    )
+
+  def forward(self, x):
+    x = self.main(x).squeeze()
+    return x

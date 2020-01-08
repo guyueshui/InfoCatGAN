@@ -22,6 +22,6 @@ parser.add_argument('--save_epoch', type=int, default=25, help='After how many e
 parser.add_argument('--num_dis_c', type=int, default=1, help='Number of categorical codes.')
 parser.add_argument('--num_con_c', type=int, default=2, help='Number of continous latent codes.')
 parser.add_argument('-f', help='For ipython debug.')
-parser.add_argument('--instance_noise', type=bool, default=False, help='Whether to use instance noise trick.')
+parser.add_argument('--instance_noise', action='store_true', help='Whether to use instance noise trick.')
 
 config = parser.parse_args()
