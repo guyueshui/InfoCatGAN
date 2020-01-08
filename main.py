@@ -19,6 +19,9 @@ def main(config):
     import models.stl10 as nets
     config.num_noise_dim == 256
     config.num_dis_c = 10
+  
+  elif config.dataset == "CIFAR10":
+    import models.cifar10 as nets
 
   elif config.dataset == 'CelebA':
     import models.celeba as nets
