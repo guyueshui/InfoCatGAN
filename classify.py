@@ -2,10 +2,10 @@ import torch
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
 import numpy as np
-from models.official_mnist import FrontD, Q
+from models.cifar10 import FrontD, Q
 from utils import get_data
 
-params = torch.load('results/MNIST/0.22%super/checkpoint/model-final.pt')
+params = torch.load('results/CIFAR10/4%super/checkpoint/model-final.pt')
 fd = FrontD()
 q = Q()
 fd.load_state_dict(params['FrontD'])
@@ -20,9 +20,9 @@ def Classify(imgs):
 
 if __name__ == '__main__':
   # Use test dataset.
-  dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())
+  dataset = dsets.CIFAR10('../datasets', train=False, transform=transforms.ToTensor())
   print(len(dataset))
-  loader = torch.utils.data.DataLoader(dataset, batch_size=100, shuffle=True, num_workers=1)
+  loader = torch.utils.data.DataLoader(dataset, batch_size=100, shuffle=False, num_workers=1)
   abatch = next(iter(loader))
   images, labels = abatch
 

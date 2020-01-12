@@ -312,7 +312,7 @@ class Trainer:
     EntQC_given_X = []
     MSEs = []
     generated_images = []
-    supervised_ratio = 0.5
+    supervised_ratio = 0.04
 
     bs = self.config.batch_size
     dv = self.config.device
@@ -358,7 +358,7 @@ class Trainer:
 
     t0 = ETimer() # train timer
     t1 = ETimer() # epoch timer
-    supervised_prob = 0.05
+    supervised_prob = 0.99
 
     for epoch in range(self.config.num_epoch):
       t1.reset()
@@ -475,10 +475,10 @@ class Trainer:
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
       print('labeled batch for Epoch %d: %d/%d' % (epoch+1, num_labeled_batch, tot_iters))
-      # if supervised_prob > 0.01:
-      #   supervised_prob -= 0.1
-      # if supervised_prob < 0.01:
-      #   supervised_prob = 0.01
+      if supervised_prob > 0.01:
+        supervised_prob -= 0.1
+      if supervised_prob < 0.01:
+        supervised_prob = 0.01
 
       if (epoch+1) % 2 == 0:
         img = self._save_image(fixed_noise_1, 'c0-epoch-{}.png'.format(epoch+1))

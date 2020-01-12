@@ -210,7 +210,6 @@ def get_data(dbname: str, data_root: str):
       transforms.Resize(32),
       transforms.CenterCrop(32),
       transforms.ToTensor(),
-      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
     ])
     
     dataset = dsets.CIFAR10(data_root, train=True, transform=transform, 
@@ -221,7 +220,6 @@ def get_data(dbname: str, data_root: str):
       transforms.Resize(32),
       transforms.CenterCrop(32),
       transforms.ToTensor(),
-      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
     ])
 
     dataset = dsets.CelebA(data_root, transform=transform, download=True)
@@ -231,7 +229,6 @@ def get_data(dbname: str, data_root: str):
       transforms.Resize(96),
       transforms.CenterCrop(96),
       transforms.ToTensor(),
-      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
     ])
 
     dataset = dsets.STL10(data_root, transform=transform)
