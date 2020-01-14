@@ -66,14 +66,13 @@ def main(config):
   d = nets.D()
   q = nets.Q()
   g = nets.G()
-  qsuper = nets.Qsemi()
 
-  for i in [fd, d, q, g, qsuper]:
+  for i in [fd, d, q, g]:
     i.to(config.device)
     i.apply(weights_init)
 
   print(config)
-  t = Trainer(config, dataset, g, fd, d, q, qsuper)
+  t = Trainer(config, dataset, g, fd, d, q)
   Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(config.cat_prob)
   
   # Plotting losses...

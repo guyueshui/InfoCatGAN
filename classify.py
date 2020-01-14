@@ -1,11 +1,24 @@
+import argparse
 import torch
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
 import numpy as np
-from models.cifar10 import FrontD, Q
 from utils import get_data
 
-params = torch.load('results/CIFAR10/4%super/checkpoint/model-final.pt')
+parser = argparse.ArgumentParser()
+parser.add_argument('--dataset', type=str, default="MNIST")
+args = parser.parse_args()
+
+params = torch.load('results/' + args.dataset + '/0.2super/checkpoint/model-epoch-100.pt')
+if args.dataset == "MNIST":
+  from models.official_mnist import FrontD, Q
+  dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())
+elif args.dataset == "CIFAR10":
+  from models.cifar10 import FrontD, Q
+  dataset = dsets.CIFAR10('../datasets', train=False, transform=transforms.ToTensor())
+else:
+  raise NotImplementedError
+
 fd = FrontD()
 q = Q()
 fd.load_state_dict(params['FrontD'])
@@ -20,7 +33,6 @@ def Classify(imgs):
 
 if __name__ == '__main__':
   # Use test dataset.
-  dataset = dsets.CIFAR10('../datasets', train=False, transform=transforms.ToTensor())
   print(len(dataset))
   loader = torch.utils.data.DataLoader(dataset, batch_size=100, shuffle=False, num_workers=1)
   abatch = next(iter(loader))

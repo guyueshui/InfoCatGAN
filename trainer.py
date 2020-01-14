@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from utils import BlahutArimoto, Noiser, LogGaussian, ETimer, generate_animation, CustomDataset
 
 class Trainer:
-  def __init__(self, config, dataset, G, FD, D, Q, Qsuper):
+  def __init__(self, config, dataset, G, FD, D, Q):
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
 
@@ -19,7 +19,6 @@ class Trainer:
     self.FD = FD
     self.D = D
     self.Q = Q
-    self.Qsuper = Qsuper
 
     savepath = os.path.join(os.getcwd(), 'results', 
                             config.dataset, config.experiment_tag)
@@ -79,7 +78,6 @@ class Trainer:
         'FrontD': self.FD.state_dict(),
         'Discriminator': self.D.state_dict(),
         'Q': self.Q.state_dict(),
-        'Qsuper': self.Qsuper.state_dict(),
         'params': self.config.__dict__
       },
       os.path.join(savepath, fname)
@@ -312,7 +310,7 @@ class Trainer:
     EntQC_given_X = []
     MSEs = []
     generated_images = []
-    supervised_ratio = 0.04
+    supervised_ratio = 0.2
 
     bs = self.config.batch_size
     dv = self.config.device
@@ -329,7 +327,8 @@ class Trainer:
     
     optimD = optim.Adam([{'params': self.FD.parameters()}, {'params': self.D.parameters()}], lr=0.0002, betas=(0.5, 0.99))
     optimG = optim.Adam([{'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
-    optimQsuper = optim.Adam(self.Qsuper.parameters(), lr=0.001, betas=(0.5, 0.99))
+    #! I have confirmed this is a good option. optimG = optim.Adam([{'params': self.G.parameters()}], lr=0.001, betas=(0.5, 0.99))
+    optimQ = optim.Adam(self.Q.parameters(), lr=0.001, betas=(0.5, 0.99))
 
     dset = CustomDataset(self.dataset, supervised_ratio)
     dset.report()
@@ -376,11 +375,15 @@ class Trainer:
         cur_batch = None
         # Biased coin toss to decide if we sampling from labeled or unlabeled data.
         is_labeled_batch = (torch.bernoulli(torch.tensor(supervised_prob)) == 1)
-        if is_labeled_batch:
-          cur_batch = next(labeled_iter)
-          num_labeled_batch += 1
-        else:
-          cur_batch = next(unlabeled_iter)
+        try:
+          if is_labeled_batch:
+            cur_batch = next(labeled_iter)
+            num_labeled_batch += 1
+          else:
+            cur_batch = next(unlabeled_iter)
+        except StopIteration:
+          print(cur_batch)
+          print(not cur_batch)
 
         if not cur_batch or cur_batch[0].size(0) != bs:
           if is_labeled_batch:
@@ -409,11 +412,11 @@ class Trainer:
         loss_real.backward()
 
         if is_labeled_batch:
-          optimQsuper.zero_grad()
-          disc_logits_real = self.Qsuper(dbody_out_real.detach())
-          qsemi_loss_real = criterionQ_dis(disc_logits_real, y.to(dv)) * 2
+          optimQ.zero_grad()
+          disc_logits_real, _, _ = self.Q(dbody_out_real.detach())
+          qsemi_loss_real = criterionQ_dis(disc_logits_real, y.to(dv)) * 1.5
           qsemi_loss_real.backward()
-          optimQsuper.step()
+          optimQ.step()
 
         # Fake part.
         noise, idx = self._sample(z, disc_c, cont_c, cat_prob, bs)
@@ -445,20 +448,23 @@ class Trainer:
         reconstruct_loss = criterionD(prob_fake, label)
 
         q_logits, q_mu, q_var = self.Q(dbody_out)
-        targets = torch.LongTensor(idx).to(self.config.device)
-        dis_loss = criterionQ_dis(q_logits, targets) * 0.8
-        con_loss = criterionQ_con(cont_c, q_mu, q_var) * 0.2 # weight
-
-        # Info flows from Qsuper to G.
-        # if is_labeled_batch:
-        if True:
-          disc_logits_fake = self.Qsuper(dbody_out) 
-          qsemi_loss_fake = criterionQ_dis(disc_logits_fake, targets) * 2
+        targets = torch.LongTensor(idx).to(dv)
+        if is_labeled_batch:
+          dis_loss = criterionQ_dis(q_logits, targets) * 1.2
         else:
-          qsemi_loss_fake = 0.0
+          dis_loss = criterionQ_dis(q_logits, targets) * 1.0
+        con_loss = criterionQ_con(cont_c, q_mu, q_var) * 0.1 # weight
+
+        # # Info flows from Qsuper to G.
+        # # if is_labeled_batch:
+        # if True:
+        #   disc_logits_fake = self.Qsuper(dbody_out) 
+        #   qsemi_loss_fake = criterionQ_dis(disc_logits_fake, targets) * 2
+        # else:
+        #   qsemi_loss_fake = 0.0
         
         ## update parameters
-        G_loss = reconstruct_loss + dis_loss + con_loss + qsemi_loss_fake
+        G_loss = reconstruct_loss + dis_loss + con_loss
         G_loss.backward()
         optimG.step()
         
