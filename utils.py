@@ -251,12 +251,30 @@ class CustomDataset:
     self.num_labeled_data = math.ceil(len(dset) * supervised_ratio)
     self.num_unlabeled_data = self.num_data - self.num_labeled_data
 
+    # Make a uniform labeled subset.
+    num_classes = len(dset.class_to_idx)
+    num_data_per_class = self.num_labeled_data // num_classes
+    targets_to_draw = np.arange(num_classes).repeat(num_data_per_class).tolist()
+    while len(targets_to_draw) < self.num_labeled_data:
+      targets_to_draw.append(np.random.randint(num_classes))
+    idx_to_draw = []
+    start = 0
+    for i, label in enumerate(dset.targets):
+      if start < len(targets_to_draw):
+        if label == targets_to_draw[start]:
+          idx_to_draw.append(i)
+          start += 1
+      else:
+        break
+    mask = np.zeros(len(dset), dtype=bool)
+    mask[idx_to_draw] = True
+
     self.labeled_data = copy.deepcopy(dset)
-    self.labeled_data.data = dset.data[:self.num_labeled_data]
-    self.labeled_data.targets = dset.targets[:self.num_labeled_data]
+    self.labeled_data.data = dset.data[mask]
+    self.labeled_data.targets = np.asarray(dset.targets)[mask].tolist()
 
     self.unlabeled_data = copy.deepcopy(dset)
-    self.unlabeled_data.data = dset.data[self.num_labeled_data:]
+    self.unlabeled_data.data = np.delete(dset.data, idx_to_draw, axis=0)
   
   @property
   def labeled(self):
@@ -270,6 +288,29 @@ class CustomDataset:
     print('-'*25)
     print('Origin dataset has {} samples'.format(self.num_data))
     print('Now splitted into {} labeled/ {} unlabeled'
-          .format(self.num_labeled_data, self.num_unlabeled_data))
+          .format(len(self.labeled_data), len(self.unlabeled_data)))
     print('-'*25)
     
+
+def MarginalEntropy(y):
+  y1 = torch.autograd.Variable(torch.randn(y.size(1)).type(torch.FloatTensor), requires_grad=True)
+  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  y1 = y.mean(0)
+  y2 = -torch.sum(y1 * torch.log(y1 + 1e-6))
+  return y2
+
+def Entropy(y):
+  y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
+  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  y1 = -y * torch.log(y + 1e-6)
+  y2 = 1.0 / config.batch_size * y1.sum()
+  return y2
+
+def DrawDistribution(dataset, title='Distribution of dataset'):
+  'Draw the distribution per label of a given dataset.'
+  label, counts = np.unique(dataset.targets, return_counts=True)
+  fig, ax = plt.subplots()
+  ax.bar(label, counts)
+  ax.set_xticks(label)
+  ax.set_title(title)
+  fig.show()
