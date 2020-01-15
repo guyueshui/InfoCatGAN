@@ -7,20 +7,27 @@ class G(nn.Module):
     super(G, self).__init__()
     self.indim = indim
     self.outdim = outdim
+    dim = 64
 
+    #
+    # Architecture comes from "xinario/catgan_pytorch"
+    #
     # in: bs x (indim x 1 x 1)
     self.main = nn.Sequential(
-      nn.ConvTranspose2d(self.indim, 1024, 1, 1), # out: 1024 x 1 x 1
-      nn.BatchNorm2d(1024),
-      nn.ReLU(inplace=True),
-      nn.ConvTranspose2d(1024, 128, 8, 1), # out: 128 x 8 x 8
-      nn.BatchNorm2d(128),
-      nn.ReLU(True),
-      nn.ConvTranspose2d(128, 64, 4, 2, 1), # out: 64 x 16 x 16
-      nn.BatchNorm2d(64),
-      nn.ReLU(True),
-      nn.ConvTranspose2d(64, self.outdim, 4, 2, 1), # out: 3 x 32 x 32
-      nn.Sigmoid()
+      nn.ConvTranspose2d(self.indim, dim*4, 4, 1, bias=False), # out: dim*4 x 4 x 4
+      nn.BatchNorm2d(dim * 4),
+      nn.LeakyReLU(0.2, inplace=True),
+
+      nn.ConvTranspose2d(dim*4, dim*2, 4, 2, 1, bias=False), # out: dim*2 x 8 x 8
+      nn.BatchNorm2d(dim * 2),
+      nn.LeakyReLU(0.2, True),
+
+      nn.ConvTranspose2d(dim*2, dim, 4, 2, 1, bias=False), # out: dim x 16 x 16
+      nn.BatchNorm2d(dim),
+      nn.LeakyReLU(0.2, True),
+
+      nn.ConvTranspose2d(dim, outdim, 4, 2, 1, bias=False), # out: 3 x 32 x 32
+      nn.Tanh()
     )
   
   def forward(self, x):
@@ -79,54 +86,68 @@ class GTransProb(nn.Module):
 class FrontD(nn.Module):
   def __init__(self):
     super(FrontD, self).__init__()
-
+    dim = 64
     # in: bs x (3 x 32 x 32)
     self.main = nn.Sequential(
-      nn.Conv2d(3, 64, 4, 2, 1),  # out: 64 x 16 x 16
-      nn.LeakyReLU(0.1, inplace=True),
-      nn.Conv2d(64, 128, 4, 2, 1, bias=False),  # out: 128 x 8 x 8
-      nn.BatchNorm2d(128),
-      nn.LeakyReLU(0.1, inplace=True),
-      nn.Conv2d(128, 1024, 8, bias=False),  # out: 1024 x 1 x 1
-      nn.BatchNorm2d(1024),
-      nn.LeakyReLU(0.1, inplace=True)
+      nn.Conv2d(3, dim, 4, 2, 1, bias=False),  # out: 64 x 16 x 16
+      nn.BatchNorm2d(dim),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(dim, dim*2, 4, 2, 1, bias=False),  # out: 128 x 8 x 8
+      nn.BatchNorm2d(dim * 2),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(dim*2, dim*4, 4, 2, 1, bias=False),  # out: 256 x 4 x 4
+      nn.BatchNorm2d(dim * 4),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(dim*4, dim*4, 4),   # out: 256 x 1 x 1
+      nn.BatchNorm2d(dim * 4),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
     )
 
-  def forward(self, input):
-    output = self.main(input)
-    return output
+
+  def forward(self, x):
+    x = self.main(x)
+    return x
+
 
 class D(nn.Module):
   def __init__(self):
     super(D, self).__init__()
 
-    self.main = nn.Sequential(
-      nn.Conv2d(1024, 1, 1),  # out: 1 x 1 x 1
-      nn.Sigmoid()
-    )
+    self.main = nn.Conv2d(256, 10, 1)  # out: 10 x 1 x 1
+    self.softmax = nn.Softmax(dim=1)  # Each row sums to 1.
 
-  def forward(self, input):
-    output = self.main(input).view(-1, 1)
-    return output
+  def forward(self, x):
+    x = self.main(x).view(-1, 10)
+    x = self.softmax(x)
+    return x
 
 class Q(nn.Module):
 
   def __init__(self):
     super(Q, self).__init__()
 
-    self.conv = nn.Conv2d(1024, 128, 1, bias=False)
-    self.bn = nn.BatchNorm2d(128)
-    self.lReLU = nn.LeakyReLU(0.1, inplace=True)
+    self.main = nn.Sequential(
+      nn.Conv2d(256, 128, 1, bias=False),
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.2, inplace=True),
+    )
+
     self.conv_disc = nn.Conv2d(128, 10, 1)
     self.conv_mu = nn.Conv2d(128, 2, 1)
     self.conv_var = nn.Conv2d(128, 2, 1)
 
   def forward(self, x):
 
-    y = self.conv(x)
+    y = self.main(x)
 
     disc_logits = self.conv_disc(y).squeeze()
-
     mu = self.conv_mu(y).squeeze()
     var = self.conv_var(y).squeeze().exp()
 
@@ -138,9 +159,9 @@ class Qsemi(nn.Module):
     self.outdim = outdim
     
     self.main = nn.Sequential(
-      nn.Conv2d(1024, 128, 1, bias=False),
+      nn.Conv2d(256, 128, 1, bias=False),
       nn.BatchNorm2d(128),
-      nn.LeakyReLU(0.1, inplace=True),
+      nn.LeakyReLU(0.2, inplace=True),
       nn.Conv2d(128, 10, 1),
     )
 

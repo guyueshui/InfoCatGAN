@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default="MNIST")
 args = parser.parse_args()
 
-params = torch.load('results/' + args.dataset + '/0.2super/checkpoint/model-epoch-100.pt')
+params = torch.load('results/' + args.dataset + '/cat+info/checkpoint/model-epoch-50.pt')
 if args.dataset == "MNIST":
   from models.official_mnist import FrontD, Q
   dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())

@@ -73,7 +73,7 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, g, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(config.cat_prob)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(config.cat_prob, 0.0022)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))
@@ -84,6 +84,7 @@ def main(config):
   plt.ylabel('Loss')
   plt.legend()
   plt.savefig(t._savepath + '/gan_loss.png')
+  plt.savefig(t._savepath + '/gan_loss.pdf')
   plt.close('all')
 
   plt.figure(figsize=(10, 5))
@@ -92,6 +93,7 @@ def main(config):
   plt.xlabel('Iterations')
   plt.ylabel('Loss')
   plt.savefig(t._savepath + '/ent_loss.png')
+  plt.savefig(t._savepath + '/ent_loss.pdf')
   plt.close('all')
 
   if config.use_ba:
@@ -116,5 +118,6 @@ if __name__ == '__main__':
   #   initc = np.array([0.147, 0.037, 0.033, 0.143, 0.136, 0.114, 0.057, 0.112, 0.143, 0.078])
   #   initc /= np.sum(initc)
   #   config.cat_prob = initc
+  # CatGAN 可以扩展到非均匀的先验分布，可以试试看，非均匀的半监督分类，效果如何！
 
   main(config)
