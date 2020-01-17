@@ -159,7 +159,7 @@ class LogGaussian:
 
 
 class ETimer:
-  'A easy to use timer.'
+  'A easy-to-use timer.'
 
   def __init__(self):
     self._start = t.time()
@@ -268,6 +268,8 @@ class CustomDataset:
         break
     mask = np.zeros(len(dset), dtype=bool)
     mask[idx_to_draw] = True
+    _, cnts = np.unique(targets_to_draw, return_counts=True)
+    self.labeled_dist = cnts / np.sum(cnts)
 
     self.labeled_data = copy.deepcopy(dset)
     self.labeled_data.data = dset.data[mask]
@@ -289,6 +291,7 @@ class CustomDataset:
     print('Origin dataset has {} samples'.format(self.num_data))
     print('Now splitted into {} labeled/ {} unlabeled'
           .format(len(self.labeled_data), len(self.unlabeled_data)))
+    print('The labeled dist is: ', self.labeled_dist)
     print('-'*25)
     
 
