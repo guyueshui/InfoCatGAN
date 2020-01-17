@@ -9,25 +9,24 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default="MNIST")
 args = parser.parse_args()
 
-params = torch.load('results/' + args.dataset + '/cat+info/checkpoint/model-epoch-50.pt')
+params = torch.load('results/' + args.dataset + '/cat+info/checkpoint/model-epoch-25.pt')
 if args.dataset == "MNIST":
-  from models.official_mnist import FrontD, Q
+  from models.official_mnist import FrontD, D
   dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())
 elif args.dataset == "CIFAR10":
-  from models.cifar10 import FrontD, Q
+  from models.cifar10 import FrontD, D
   dataset = dsets.CIFAR10('../datasets', train=False, transform=transforms.ToTensor())
 else:
   raise NotImplementedError
 
 fd = FrontD()
-q = Q()
+d = D()
 fd.load_state_dict(params['FrontD'])
-q.load_state_dict(params['Q'])
+d.load_state_dict(params['D'])
 
 def Classify(imgs):
   with torch.no_grad():
-    logits, _, _ = q(fd(imgs))
-    logits = logits.numpy()
+    logits = d(fd(imgs)).numpy()
   predicted = np.argmax(logits, axis=1)
   return predicted
 

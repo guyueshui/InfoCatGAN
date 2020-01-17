@@ -3,7 +3,7 @@
 import torch.nn as nn
 
 class G(nn.Module):
-  def __init__(self, indim=140, outdim=3):
+  def __init__(self, indim=100, outdim=3):
     super(G, self).__init__()
     self.indim = indim
     self.outdim = outdim

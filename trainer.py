@@ -85,10 +85,6 @@ class Trainer:
     )
 
   def ss_train(self, cat_prob, supervised_ratio):
-    """
-    Exactly for CatGAN, D and a single-Q act as ss-infoGAN
-                        Q ------  Q_ss
-    """
     torch.set_default_tensor_type(torch.FloatTensor)
     np.set_printoptions(precision=4)
     torch.manual_seed(self.config.seed)
@@ -115,9 +111,9 @@ class Trainer:
     criterionQ_con = LogGaussian()
     
     optimD = optim.Adam([{'params': self.FD.parameters()}, {'params': self.D.parameters()}], lr=0.0002, betas=(0.5, 0.99))
-    optimG = optim.Adam([{'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
+    optimG = optim.Adam([{'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.0002, betas=(0.5, 0.99))
     #! I have confirmed this is a good option. optimG = optim.Adam([{'params': self.G.parameters()}], lr=0.001, betas=(0.5, 0.99))
-    optimQ = optim.Adam(self.Q.parameters(), lr=0.001, betas=(0.5, 0.99))
+    # optimQ = optim.Adam(self.Q.parameters(), lr=0.0005, betas=(0.5, 0.99))
 
     dset = CustomDataset(self.dataset, supervised_ratio)
     dset.report()
@@ -207,9 +203,13 @@ class Trainer:
           qsemi_loss_real = criterionQ_dis(disc_logits_real, y.to(dv)) * 1.5
           qsemi_loss_real.backward()
           optimQ.step()
+        if is_labeled_batch:
+          sup_loss = criterionQ_dis(q_logits, targets) * 1.1
+        else:
+          sup_loss = criterionQ_dis(q_logits, targets) * 1.0
 
         # Fake part.
-        noise, idx = self._sample(z, disc_c, cont_c, cat_prob, bs)
+        noise = torch.randn(bs, self.config.num_noise_dim, 1, 1).to(dv)
         fake_image = self.G(noise)
 
         ## Add instance noise if specified.
@@ -232,6 +232,8 @@ class Trainer:
         #
         optimG.zero_grad()
         # NOTE: why bother to get a new output of FD? cause FD is updated by optimizing Discriminator.
+        noise = torch.randn(bs, self.config.num_noise_dim, 1, 1).to(dv)
+        fake_image = self.G(noise)
         dbody_out = self.FD(fake_image)
         probs_fake = self.D(dbody_out)
         # Minimize entropy to fool D to make a certain prediction of fake sample.
@@ -239,24 +241,8 @@ class Trainer:
         # Maxmize marginal entropy to ensure equal usage.
         margin_ent_fake = MarginalEntropy(probs_fake)
 
-        q_logits, q_mu, q_var = self.Q(dbody_out.detach())
-        targets = torch.LongTensor(idx).to(dv)
-        if is_labeled_batch:
-          dis_loss = criterionQ_dis(q_logits, targets) * 1.1
-        else:
-          dis_loss = criterionQ_dis(q_logits, targets) * 1.0
-        con_loss = criterionQ_con(cont_c, q_mu, q_var) * 0.1 # weight
-
-        # # Info flows from Qsuper to G.
-        # # if is_labeled_batch:
-        # if True:
-        #   disc_logits_fake = self.Qsuper(dbody_out) 
-        #   qsemi_loss_fake = criterionQ_dis(disc_logits_fake, targets) * 2
-        # else:
-        #   qsemi_loss_fake = 0.0
-        
         ## update parameters
-        G_loss = ent_fake - margin_ent_fake + dis_loss + con_loss
+        G_loss = ent_fake - margin_ent_fake
         G_loss.backward()
         optimG.step()
         
@@ -323,17 +309,20 @@ class Trainer:
     cont_c = torch.FloatTensor(bs, self.config.num_con_c).to(dv)
     
     optimD = optim.Adam([{'params': self.FD.parameters()}, {'params': self.D.parameters()}], lr=0.0002, betas=(0.5, 0.99))
-    optimG = optim.Adam([{'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
-    #! I have confirmed this is a good option. optimG = optim.Adam([{'params': self.G.parameters()}], lr=0.001, betas=(0.5, 0.99))
+    # optimG = optim.Adam([{'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
+    optimG = optim.Adam([{'params': self.G.parameters()}], lr=0.001, betas=(0.5, 0.99)) # I have confirmed this is a good option.
 
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=1)
     tot_iters = len(dataloader)
 
     # Fixed random variables.
     fixz, cdis, c1, c2, c0 = self._fix_noise()
-    fixed_noise_0 = np.hstack([fixz, cdis, c0])
-    fixed_noise_1 = np.hstack([fixz, cdis, c1])
-    fixed_noise_2 = np.hstack([fixz, cdis, c2])
+    # fixed_noise_0 = np.hstack([fixz, cdis, c0])
+    # fixed_noise_1 = np.hstack([fixz, cdis, c1])
+    # fixed_noise_2 = np.hstack([fixz, cdis, c2])
+    fixed_noise_0 = fixz
+    fixed_noise_1 = fixz
+    fixed_noise_2 = fixz
     # NOTE: dtype should exactly match the network weight's type!
     fixed_noise_0 = torch.as_tensor(fixed_noise_0, dtype=torch.float32).view(100, -1, 1, 1).to(dv)
     fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(100, -1, 1, 1).to(dv)
@@ -358,8 +347,10 @@ class Trainer:
         #
         optimD.zero_grad()
 
-        image, y = cur_batch
+        image, _ = cur_batch
         image = image.to(dv)
+        if image.size(0) != bs:
+          break # start next epoch
 
         # Guided by https://github.com/soumith/ganhacks#13-add-noise-to-inputs-decay-over-time
         # This may be helpful for generator convergence.
@@ -377,7 +368,7 @@ class Trainer:
         margin_ent_real = MarginalEntropy(probs_real)
 
         # Fake part.
-        noise, idx = self._sample(z, disc_c, cont_c, cat_prob, bs)
+        noise = torch.randn(bs, self.config.num_noise_dim, 1, 1).to(dv)
         fake_image = self.G(noise)
 
         ## Add instance noise if specified.
@@ -399,6 +390,15 @@ class Trainer:
         # Train generator.
         #
         optimG.zero_grad()
+
+        noise = torch.randn(bs, self.config.num_noise_dim, 1, 1).to(dv)
+        fake_image = self.G(noise)
+
+        ## Add instance noise if specified.
+        if self.config.instance_noise:
+          # instance_noise.normal_(0, std)  # Regenerate instance noise!
+          fake_image = fake_image + instance_noise
+
         # NOTE: why bother to get a new output of FD? cause FD is updated by optimizing Discriminator.
         dbody_out = self.FD(fake_image)
         probs_fake = self.D(dbody_out)

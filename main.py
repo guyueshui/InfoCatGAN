@@ -22,7 +22,7 @@ def main(config):
 
   elif config.dataset == 'CIFAR10':
     import models.cifar10 as nets
-    config.num_noise_dim = 128
+    config.num_noise_dim = 100
 
   elif config.dataset == 'CelebA':
     import models.celeba as nets
@@ -73,7 +73,7 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, g, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(config.cat_prob, 0.0022)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(config.cat_prob)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))
