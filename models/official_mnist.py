@@ -132,14 +132,13 @@ class FrontD(nn.Module):
 class D(nn.Module):
   def __init__(self):
     super(D, self).__init__()
-    self.main = nn.Sequential(
-      nn.Linear(1024, 1),
-      nn.Sigmoid()
-    )
+    self.fc = nn.Linear(1024, 1)
+    self.sigmoid = nn.Sigmoid()
 
   def forward(self, x):
-    x = self.main(x)
-    return x
+    ut = self.fc(x)
+    x = self.sigmoid(ut)
+    return ut, x
 
 
 class Q(nn.Module):
@@ -165,14 +164,3 @@ class Q(nn.Module):
     mu = self.mu(x)
     var = self.var(x).exp()
     return disc_logits, mu, var
-
-
-class Qsemi(nn.Module):
-  def __init__(self, out_dim=10):
-    super(Qsemi, self).__init__()
-
-    self.fc = nn.Linear(1024, out_dim)
-
-  def forward(self, x):
-    disc_logits = self.fc(x)
-    return disc_logits
