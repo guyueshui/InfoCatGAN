@@ -6,8 +6,10 @@ import copy
 import matplotlib.pyplot as plt
 import time as t
 import imageio
+import math
 
 from config import config
+from torchvision.datasets import VisionDataset
 
 class Noiser:
   'Generate some noise for GAN\'s input.'
@@ -157,7 +159,7 @@ class LogGaussian:
 
 
 class ETimer:
-  'A easy to use timer.'
+  'A easy-to-use timer.'
 
   def __init__(self):
     self._start = t.time()
@@ -202,22 +204,22 @@ def get_data(dbname: str, data_root: str):
 
     dataset = dsets.FashionMNIST(data_root, train=True, transform=transform, 
                                  download=True)
-    
-  elif dbname == 'CIFAR10':
+
+  elif dbname == "CIFAR10":
     transform = transforms.Compose([
       transforms.Resize(32),
       transforms.CenterCrop(32),
       transforms.ToTensor(),
     ])
-
-    dataset = dsets.CIFAR10(data_root, train=True, transform=transform)
-
+    
+    dataset = dsets.CIFAR10(data_root, train=True, transform=transform, 
+                            download=True)
+    
   elif dbname == 'CelebA':
     transform = transforms.Compose([
       transforms.Resize(32),
       transforms.CenterCrop(32),
       transforms.ToTensor(),
-      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
     ])
 
     dataset = dsets.CelebA(data_root, transform=transform, download=True)
@@ -227,7 +229,6 @@ def get_data(dbname: str, data_root: str):
       transforms.Resize(96),
       transforms.CenterCrop(96),
       transforms.ToTensor(),
-      transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
     ])
 
     dataset = dsets.STL10(data_root, transform=transform)
@@ -240,3 +241,79 @@ def get_data(dbname: str, data_root: str):
 
 def generate_animation(path: str, images: list):
   imageio.mimsave(path + '/' + 'generate_animation.gif', images, fps=5)
+
+
+# Add custom dataset for semisupervised training.
+class CustomDataset:
+  "Split the origin dataset into labeled and unlabeled by the given ratio."
+  def __init__(self, dset, supervised_ratio):
+    self.num_data = len(dset)
+    self.num_labeled_data = math.ceil(len(dset) * supervised_ratio)
+    self.num_unlabeled_data = self.num_data - self.num_labeled_data
+
+    # Make a uniform labeled subset.
+    num_classes = len(dset.class_to_idx)
+    num_data_per_class = self.num_labeled_data // num_classes
+    targets_to_draw = np.arange(num_classes).repeat(num_data_per_class).tolist()
+    while len(targets_to_draw) < self.num_labeled_data:
+      targets_to_draw.append(np.random.randint(num_classes))
+    idx_to_draw = []
+    start = 0
+    for i, label in enumerate(dset.targets):
+      if start < len(targets_to_draw):
+        if label == targets_to_draw[start]:
+          idx_to_draw.append(i)
+          start += 1
+      else:
+        break
+    mask = np.zeros(len(dset), dtype=bool)
+    mask[idx_to_draw] = True
+    _, cnts = np.unique(targets_to_draw, return_counts=True)
+    self.labeled_dist = cnts / np.sum(cnts)
+
+    self.labeled_data = copy.deepcopy(dset)
+    self.labeled_data.data = dset.data[mask]
+    self.labeled_data.targets = np.asarray(dset.targets)[mask].tolist()
+
+    self.unlabeled_data = copy.deepcopy(dset)
+    self.unlabeled_data.data = np.delete(dset.data, idx_to_draw, axis=0)
+  
+  @property
+  def labeled(self):
+    return self.labeled_data
+
+  @property
+  def unlabeled(self):
+    return self.unlabeled_data
+
+  def report(self):
+    print('-'*25)
+    print('Origin dataset has {} samples'.format(self.num_data))
+    print('Now splitted into {} labeled/ {} unlabeled'
+          .format(len(self.labeled_data), len(self.unlabeled_data)))
+    print('The labeled dist is: ', self.labeled_dist)
+    print('-'*25)
+    
+
+def MarginalEntropy(y):
+  y1 = torch.autograd.Variable(torch.randn(y.size(1)).type(torch.FloatTensor), requires_grad=True)
+  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  y1 = y.mean(0)
+  y2 = -torch.sum(y1 * torch.log(y1 + 1e-6))
+  return y2
+
+def Entropy(y):
+  y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
+  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  y1 = -y * torch.log(y + 1e-6)
+  y2 = 1.0 / config.batch_size * y1.sum()
+  return y2
+
+def DrawDistribution(dataset, title='Distribution of dataset'):
+  'Draw the distribution per label of a given dataset.'
+  label, counts = np.unique(dataset.targets, return_counts=True)
+  fig, ax = plt.subplots()
+  ax.bar(label, counts)
+  ax.set_xticks(label)
+  ax.set_title(title)
+  fig.show()
