@@ -3,6 +3,9 @@
 import argparse
 import numpy as np
 
+def str2bool(v):
+  return v.lower() in ['True', '1']
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_epoch', type=int, default=70)
 parser.add_argument('--num_class', type=int, default=10, help='Number of different categories.')
@@ -22,6 +25,16 @@ parser.add_argument('--save_epoch', type=int, default=25, help='After how many e
 parser.add_argument('--num_dis_c', type=int, default=1, help='Number of categorical codes.')
 parser.add_argument('--num_con_c', type=int, default=2, help='Number of continous latent codes.')
 parser.add_argument('-f', help='For ipython debug.')
-parser.add_argument('--instance_noise', type=bool, default=True, help='Whether to use instance noise trick.')
+parser.add_argument('--instance_noise', type=str2bool, default=True, help='Whether to use instance noise trick.')
 
-config = parser.parse_args()
+parser.add_argument('--max_step', type=int, default=500000)
+parser.add_argument('--lr_update_step', type=int, default=10000)
+parser.add_argument('--lr', type=float, default=0.0001)
+parser.add_argument('--beta1', type=float, default=0.5)
+parser.add_argument('--beta2', type=float, default=0.999)
+parser.add_argument('--gamma', type=float, default=0.5)
+parser.add_argument('--lambda_k', type=float, default=0.001)
+
+def get_config():
+  config = parser.parse_args()
+  return config

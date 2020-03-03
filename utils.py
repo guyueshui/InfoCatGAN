@@ -8,7 +8,6 @@ import time as t
 import imageio
 import math
 
-from config import config
 from torchvision.datasets import VisionDataset
 
 class Noiser:
@@ -127,6 +126,7 @@ class BlahutArimoto:
 
     return f, post_dist
 
+
 class ImbalanceSampler:
   'Make an imbalanced dataset by deleting something.'
 
@@ -153,8 +153,8 @@ class LogGaussian:
   Custom loss for Q network.
   """
   def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
-    logli = -0.5 * (var.mul(2*np.pi) + config.tiny).log() - \
-            (x-mu).pow(2).div(var.mul(2.0) + config.tiny)
+    logli = -0.5 * (var.mul(2*np.pi) + 1e-6).log() - \
+            (x-mu).pow(2).div(var.mul(2.0) + 1e-6)
     return logli.sum(1).mean().mul(-1)
 
 
@@ -222,7 +222,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
 
-    dataset = dsets.CelebA(data_root, transform=transform, download=True)
+    dataset = dsets.ImageFolder(data_root + '/celeba/img_aligned_celeba', transform=transform)
 
   elif dbname == 'STL10':
     transform = transforms.Compose([
@@ -303,10 +303,11 @@ def MarginalEntropy(y):
   return y2
 
 def Entropy(y):
+  bs = y.size(0)
   y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
   y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
   y1 = -y * torch.log(y + 1e-6)
-  y2 = 1.0 / config.batch_size * y1.sum()
+  y2 = 1.0 / bs * y1.sum()
   return y2
 
 def DrawDistribution(dataset, title='Distribution of dataset'):
