@@ -34,7 +34,8 @@ class Trainer(object):
     self.save_dir = save_dir
     # Write experiment settings to file.
     with open(os.path.join(save_dir, 'config.json'), 'w') as f:
-      json.dump(config.__dict__, f, indent=4, sort_keys=True)
+      f.write(str(config.__dict__))
+      # json.dump(config.__dict__, f, indent=4, sort_keys=True)
     
     self.build_model()
 
@@ -51,7 +52,7 @@ class Trainer(object):
              optim.Adam(self.D.parameters(), lr=lr, betas=(self.config.beta1, self.config.beta2)),
     
     g_optim, d_optim = _get_optimizer(self.lr)
-    dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=1)
+    dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
     data_loader = iter(dataloader)
     x_fixed = next(data_loader)
     vutils.save_image(x_fixed, '{}/x_fixed.png'.format(self.save_dir))

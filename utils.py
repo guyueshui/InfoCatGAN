@@ -222,7 +222,8 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
 
-    dataset = dsets.ImageFolder(data_root + '/celeba/img_aligned_celeba', transform=transform)
+    # dataset = dsets.CelebA(data_root, transform=transform, download=False)
+    dataset = dsets.ImageFolder(data_root, transform=transform)
 
   elif dbname == 'STL10':
     transform = transforms.Compose([

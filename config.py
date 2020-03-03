@@ -9,8 +9,8 @@ def str2bool(v):
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_epoch', type=int, default=70)
 parser.add_argument('--num_class', type=int, default=10, help='Number of different categories.')
-parser.add_argument('--num_noise_dim', type=int, default=62, help='Uncompressed noise dimension (i.e., dim of z) of the generator input.')
-parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--num_noise_dim', type=int, default=128, help='Uncompressed noise dimension (i.e., dim of z) of the generator input.')
+parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--tiny', type=float, default=1e-6, help='Global precison.')
 parser.add_argument('--dataset', type=str, default='MNIST', help='[MNIST | FashionMNIST | CelebA], The dataset to train.')
 parser.add_argument('--data_root', type=str, default='../datasets')
@@ -34,6 +34,7 @@ parser.add_argument('--beta1', type=float, default=0.5)
 parser.add_argument('--beta2', type=float, default=0.999)
 parser.add_argument('--gamma', type=float, default=0.5)
 parser.add_argument('--lambda_k', type=float, default=0.001)
+parser.add_argument('--hidden_dim', type=int, default=128)
 
 def get_config():
   config = parser.parse_args()
