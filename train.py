@@ -114,14 +114,17 @@ class Trainer(object):
         prev_measure = cur_measure
   
   def build_model(self):
+    channel, height, width = self.dataset.sample[0].size()
+    assert height == width, "Height and width must equal."
+    repeat_num = int(np.log2(height)) - 2
     self.G = nets.GeneratorCNN([self.batch_size, self.num_noise_dim], 
                                [3, 32, 32],
                                self.config.hidden_dim,
-                               self.config.repeat_num)
+                               repeat_num)
     self.D = nets.DiscriminatorCNN([3, 32, 32],
                                    [3, 32, 32],
                                    self.config.hidden_dim,
-                                   self.config.repeat_num)
+                                   repeat_num)
     for i in [self.G, self.D]:
       i.apply(weights_init)
       i.to(self.config.device)
