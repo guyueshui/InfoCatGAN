@@ -55,7 +55,8 @@ class Trainer(object):
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
     data_loader = iter(dataloader)
     x_fixed = next(data_loader)
-    vutils.save_image(x_fixed, '{}/x_fixed.png'.format(self.save_dir))
+    print(x_fixed[0].size())
+    vutils.save_image(x_fixed[0], '{}/x_fixed.png'.format(self.save_dir))
 
     k_t = 0
     prev_measure = 1
@@ -114,15 +115,15 @@ class Trainer(object):
         prev_measure = cur_measure
   
   def build_model(self):
-    channel, height, width = self.dataset.sample[0].size()
+    channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
     repeat_num = int(np.log2(height)) - 2
     self.G = nets.GeneratorCNN([self.batch_size, self.num_noise_dim], 
-                               [3, 32, 32],
+                               [3, 64, 64],
                                self.config.hidden_dim,
                                repeat_num)
-    self.D = nets.DiscriminatorCNN([3, 32, 32],
-                                   [3, 32, 32],
+    self.D = nets.DiscriminatorCNN([3, 64, 64],
+                                   [3, 64, 64],
                                    self.config.hidden_dim,
                                    repeat_num)
     for i in [self.G, self.D]:
