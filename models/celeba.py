@@ -1,7 +1,10 @@
 # Networks for CelebA dataset. shape: torch.Size([batch_size, 3, 32, 32])
 
+import torch
 import torch.nn as nn
 import numpy as np
+
+dv = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 class G(nn.Module):
   def __init__(self):
@@ -113,7 +116,7 @@ class Encoder(nn.Module):
     x = self.conv(x)
     _, c, h, w = x.size()
     dim = c * h * w
-    self.fc = nn.Linear(dim, np.prod(self.out_shape))
+    self.fc = nn.Linear(dim, np.prod(self.out_shape)).to(dv)
     return x.view(-1, dim)
 
   def forward(self, x):

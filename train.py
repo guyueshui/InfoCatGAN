@@ -54,9 +54,9 @@ class Trainer(object):
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
     data_loader = iter(dataloader)
-    x_fixed = next(data_loader)
-    print(x_fixed[0].size())
-    vutils.save_image(x_fixed[0], '{}/x_fixed.png'.format(self.save_dir))
+    x_fixed, _ = next(data_loader)
+    x_fixed = x_fixed.to(dv)
+    vutils.save_image(x_fixed, '{}/x_fixed.png'.format(self.save_dir))
 
     k_t = 0
     prev_measure = 1
@@ -70,19 +70,17 @@ class Trainer(object):
         data_loader = iter(dataloader)
         real_data = next(data_loader)
       image, _ = real_data
+      image = image.to(dv)
 
       self.D.zero_grad()
       self.G.zero_grad()
 
       z.data.normal_(0, 1)
-      print("z size: ", z.size())
       fake_image = self.G(z)
       
-      print("image size ", image.size())
       ae_d_real = self.D(image)
       ae_d_fake = self.D(fake_image.detach())
       ae_g = self.D(fake_image)
-      print("ad_real.size ", ae_d_real.size())
 
       d_loss_real = AeLoss(ae_d_real, image)
       d_loss_fake = AeLoss(ae_d_fake, fake_image.detach())
@@ -109,6 +107,7 @@ class Trainer(object):
               .format(step, self.max_step, d_loss.detach().cpu(), d_loss_real.detach().cpu(),
                       g_loss.detach().cpu(), measure, k_t, self.lr))
       x_fake =  self.generate(z_fixed, self.save_dir, idx=step)
+      print("x_fake.size ", x_fake.size())
       self.autoencode(x_fixed, self.save_dir, idx=step, x_fake=x_fake)
 
       if (step+1) % self.lr_update_step == 0:
@@ -143,6 +142,7 @@ class Trainer(object):
 
   def autoencode(self, inputs, path, idx=None, x_fake=None):
     x_path = '{}/{}_D.png'.format(path, idx)
+    print("inputs.size ", inputs.size())
     x = self.D(inputs)
     vutils.save_image(x.data, x_path)
     print("[*] Samples saved: {}".format(x_path))
