@@ -65,20 +65,24 @@ class Trainer(object):
 
     for step in range(self.max_step):
       try:
-        image = next(data_loader)
+        real_data = next(data_loader)
       except StopIteration:
         data_loader = iter(dataloader)
-        image = next(data_loader)
+        real_data = next(data_loader)
+      image, _ = real_data
 
       self.D.zero_grad()
       self.G.zero_grad()
 
       z.data.normal_(0, 1)
+      print("z size: ", z.size())
       fake_image = self.G(z)
       
+      print("image size ", image.size())
       ae_d_real = self.D(image)
       ae_d_fake = self.D(fake_image.detach())
       ae_g = self.D(fake_image)
+      print("ad_real.size ", ae_d_real.size())
 
       d_loss_real = AeLoss(ae_d_real, image)
       d_loss_fake = AeLoss(ae_d_fake, fake_image.detach())

@@ -136,8 +136,8 @@ class Decoder(nn.Module):
       layers.append(nn.ELU(True))
       if idx < repeat_num - 1:
         layers.append(nn.UpsamplingNearest2d(scale_factor=2))
-      layers.append(nn.Conv2d(in_channel, out_channel, 3, 1, 1))
-      layers.append(nn.ELU(True))
+    layers.append(nn.Conv2d(in_channel, out_channel, 3, 1, 1))
+    layers.append(nn.ELU(True))
     self.conv = nn.Sequential(*layers)
   
   def forward(self, x):
@@ -153,7 +153,8 @@ class GeneratorCNN(nn.Module):
     self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
 
   def forward(self, x):
-    x = self.fc(x).view(-1 + self.latent_shape)
+    x = self.fc(x).view([-1] + self.latent_shape)
+    print("front decoder x.shape: ", x.size())
     x = self.dec(x)
     return x
 
@@ -165,9 +166,10 @@ class DiscriminatorCNN(nn.Module):
     self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
 
   def forward(self, x):
-    latent = self.enc(x).view(-1, np.prod(self.latent_shape))
+    latent = self.enc(x)
     x = self.dec(latent)
-    return latent, x
+    # return latent, x
+    return x
     
     # Encoder
     # 怎么把conv1_output_dim推导出来，其实就是出来之后的空间结构
