@@ -117,11 +117,12 @@ class Trainer(object):
         k_t = max(0, min(1, k_t))
 
         # Print progress...
-        if (num_iter+1) % 100 == 0:
+        if (num_iter+1) % 500 == 0:
           print('Epoch: ({:3.0f}/{:3.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
           .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
+          self.autoencode(image, self.save_dir, epoch+1, fake_image)
       # end of epoch
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
@@ -137,7 +138,9 @@ class Trainer(object):
       if (epoch+1) % 2 == 0:
         img = self.generate(z_fixed, self.save_dir, epoch+1)
         generated_images.append(img)
-        self.autoencode(image, self.save_dir, epoch+1, fake_image)
+        print("eposch image.device ", image.device)
+        print("eposch fake_image.device ", fake_image.device)
+        self.autoencode(image.to(dv), self.save_dir, epoch+1, fake_image.to(dv))
 
     # Training finished.
     training_time = t0.elapsed()
@@ -180,7 +183,7 @@ class Trainer(object):
     img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
     img = self.D(inputs)
     vutils.save_image(img, img_path)
-    if fake_img is not None:
+    if fake_inputs is not None:
       fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
       fake_img = self.D(fake_inputs)
       vutils.save_image(fake_img, fake_img_path)
