@@ -1,5 +1,4 @@
 import os
-import json
 import torch
 import torchvision
 import numpy as np 
@@ -11,7 +10,7 @@ import torchvision.transforms as transforms
 import models.celeba as nets
 from torch.utils.data import DataLoader
 
-from utils import get_data, weights_init
+from utils import get_data, weights_init, ETimer, generate_animation
 from config import get_config
 
 class Trainer(object):
@@ -33,19 +32,29 @@ class Trainer(object):
       os.makedirs(save_dir)
     self.save_dir = save_dir
     # Write experiment settings to file.
-    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+    with open(os.path.join(save_dir, 'config.txt'), 'w') as f:
       f.write(str(config.__dict__))
       # json.dump(config.__dict__, f, indent=4, sort_keys=True)
     
     self.build_model()
 
   def train(self):
+    self.log = {}
+    self.log['d_loss'] = []
+    self.log['g_loss'] = []
+    self.measure = {} # convergence measure
+    self.measure['pre'] = []
+    self.measure['pre'].append(1)
+    self.measure['cur'] = []
+    generated_images = []
+    
     bs = self.batch_size
     dv = self.config.device
     AeLoss = nn.L1Loss().to(dv)
 
     z = torch.FloatTensor(bs, self.num_noise_dim).to(dv)
     z_fixed = torch.FloatTensor(bs, self.num_noise_dim).to(dv)
+    z_fixed.normal_(0, 1)
 
     def _get_optimizer(lr):
       return optim.Adam(self.G.parameters(), lr=lr, betas=(self.config.beta1, self.config.beta2)), \
@@ -53,106 +62,129 @@ class Trainer(object):
     
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
-    data_loader = iter(dataloader)
-    x_fixed, _ = next(data_loader)
-    x_fixed = x_fixed.to(dv)
-    vutils.save_image(x_fixed, '{}/x_fixed.png'.format(self.save_dir))
 
+    # Training...
+    print('-'*25)
+    print('Starting Training Loop...\n')
+    print('Epochs: {}\nDataset: {}\nBatch size: {}\nLength of Dataloder: {}'
+          .format(self.config.num_epoch, self.config.dataset, 
+                  self.config.batch_size, len(dataloader)))
+    print('-'*25)
+
+    t0 = ETimer() # train timer
+    t1 = ETimer() # epoch timer
     k_t = 0
-    prev_measure = 1
-    from collections import deque
-    measure_history = deque([0]*self.lr_update_step, self.lr_update_step)
 
-    for step in range(self.max_step):
-      try:
-        real_data = next(data_loader)
-      except StopIteration:
-        data_loader = iter(dataloader)
-        real_data = next(data_loader)
-      image, _ = real_data
-      image = image.to(dv)
+    self.D.train()
+    for epoch in range(self.config.num_epoch):
+      self.G.train()
+      t1.reset()
+      for num_iter, (image, _) in enumerate(dataloader):
+        if image.size(0) != bs:
+          break
+        
+        image = image.to(dv)
+        z.normal_(0, 1)
 
-      self.D.zero_grad()
-      self.G.zero_grad()
+        # Update discriminator.
+        d_optim.zero_grad()
+        d_real = self.D(image)
+        d_loss_real = AeLoss(d_real, image)
 
-      z.data.normal_(0, 1)
-      fake_image = self.G(z)
+        fake_image = self.G(z)
+        d_fake = self.D(fake_image.detach())
+        d_loss_fake = AeLoss(d_fake, fake_image.detach())
+
+        d_loss = d_loss_real - k_t * d_loss_fake
+        self.log['d_loss'].append(d_loss.cpu().detach().item())
+        d_loss.backward()
+        d_optim.step()
+
+        # Update generator.
+        g_optim.zero_grad()
+        d_fake = self.D(fake_image)
+        g_loss = AeLoss(d_fake, fake_image)
+        self.log['g_loss'].append(g_loss.cpu().detach().item())
+        g_loss.backward()
+        g_optim.step()
+
+        # Convergence metric.
+        balance = (self.gamma * d_loss_real - g_loss).item()
+        temp_measure = d_loss_real + abs(balance)
+        self.measure['cur'] = temp_measure.item()
+        # update k_t
+        k_t += self.lambda_k * balance
+        k_t = max(0, min(1, k_t))
+
+        # Print progress...
+        if (num_iter+1) % 100 == 0:
+          print('Epoch: ({:3.0f}/{:3.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
+          .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
+          d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
+          )
+      # end of epoch
+      epoch_time = t1.elapsed()
+      print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
+
+      if np.mean(self.measure['pre']) < np.mean(self.measure['cur']):
+        self.lr *= 0.5
+        g_optim, d_optim = _get_optimizer(self.lr)
+      else:
+        print('M_pre: ' + str(np.mean(self.measure['pre'])) + ', M_cur: ' + str(np.mean(self.measure['cur'])))
+        self.measure['pre'] = self.measure['cur']
+        self.measure['cur'] = []
       
-      ae_d_real = self.D(image)
-      ae_d_fake = self.D(fake_image.detach())
-      ae_g = self.D(fake_image)
+      if (epoch+1) % 2 == 0:
+        img = self.generate(z_fixed, self.save_dir, epoch+1)
+        generated_images.append(img)
+        self.autoencode(image, self.save_dir, epoch+1, fake_image)
 
-      d_loss_real = AeLoss(ae_d_real, image)
-      d_loss_fake = AeLoss(ae_d_fake, fake_image.detach())
-      d_loss = d_loss_real - k_t * d_loss_fake
+    # Training finished.
+    training_time = t0.elapsed()
+    print('-'*50)
+    print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
+    print('-'*50)
+    generate_animation(self.save_dir, generated_images)
 
-      g_loss = AeLoss(ae_g, fake_image)
-      
-      loss = d_loss + g_loss
-      loss.backward()
-
-      g_optim.step()
-      d_optim.step()
-
-      g_d_balance = (self.gamma * d_loss_real - d_loss_fake)
-      k_t += self.lambda_k * g_d_balance
-      k_t = max(min(1, k_t), 0)
-
-      measure = d_loss_real + abs(g_d_balance)
-      measure_history.append(measure)
-
-      if step % 50 == 0:
-        print("[{}/{}] Loss_D {:.4f} L_x: {:4f} Loss_G: {:.4f} "
-              "measure: {:.4f}, k_t: {:4f}, lr: {:.7f}"
-              .format(step, self.max_step, d_loss.detach().cpu(), d_loss_real.detach().cpu(),
-                      g_loss.detach().cpu(), measure, k_t, self.lr))
-      x_fake =  self.generate(z_fixed, self.save_dir, idx=step)
-      print("x_fake.size ", x_fake.size())
-      self.autoencode(x_fixed, self.save_dir, idx=step, x_fake=x_fake)
-
-      if (step+1) % self.lr_update_step == 0:
-        cur_measure = np.mean(measure_history)
-        if cur_measure > prev_measure * 0.9999:
-          self.lr *= 0.5
-          g_optim, d_optim = _get_optimizer(self.lr)
-        prev_measure = cur_measure
   
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
     repeat_num = int(np.log2(height)) - 2
     self.G = nets.GeneratorCNN([self.batch_size, self.num_noise_dim], 
-                               [3, 64, 64],
+                               [3, 32, 32],
                                self.config.hidden_dim,
-                               repeat_num)
-    self.D = nets.DiscriminatorCNN([3, 64, 64],
-                                   [3, 64, 64],
+                               )
+    self.D = nets.DiscriminatorCNN([3, 32, 32],
+                                   [3, 32, 32],
                                    self.config.hidden_dim,
-                                   repeat_num)
+                                   )
     for i in [self.G, self.D]:
       i.apply(weights_init)
       i.to(self.config.device)
-
-  def generate(self, inputs, path, idx=None):
-    path = '{}/{}_G.png'.format(path, idx)
-    x = self.G(inputs)
-    vutils.save_image(x.data, path)
-    print("[*] Samples saved: {}".format(path))
-    return x
-
-  def autoencode(self, inputs, path, idx=None, x_fake=None):
-    x_path = '{}/{}_D.png'.format(path, idx)
-    print("inputs.size ", inputs.size())
-    x = self.D(inputs)
-    vutils.save_image(x.data, x_path)
-    print("[*] Samples saved: {}".format(x_path))
-
-    if x_fake is not None:
-      x_fake_path = '{}/{}_D_fake.png'.format(path, idx)
-      x = self.D(x_fake)
-      vutils.save_image(x.data, x_fake_path)
-      print("[*] Samples saved: {}".format(x_fake_path))
   
+  def generate(self, noise, path, idx=None):
+    self.G.eval()
+    img_path = os.path.join(path, 'G-epoch-{}.png'.format(idx))
+    from PIL import Image
+    from torchvision.utils import make_grid
+    tensor = self.G(noise)
+    grid = make_grid(tensor, nrow=8, padding=2)
+    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+    ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+    im = Image.fromarray(ndarr)
+    im.save(img_path)
+    return ndarr
+
+  def autoencode(self, inputs, path, idx=None, fake_inputs=None):
+    img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
+    img = self.D(inputs)
+    vutils.save_image(img, img_path)
+    if fake_img is not None:
+      fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
+      fake_img = self.D(fake_inputs)
+      vutils.save_image(fake_img, fake_img_path)
+
 
 def main(config):
   assert config.dataset == 'CelebA', "CelebA support only."
