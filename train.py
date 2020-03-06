@@ -62,7 +62,7 @@ class Trainer(object):
     
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
-    real_fixed_image = next(iter(dataloader))[0][0].to(dv)
+    real_fixed_image = next(iter(dataloader))[0].to(dv)
     print("real_fixed_image.size ", real_fixed_image.size())
 
     # Training...
@@ -124,7 +124,6 @@ class Trainer(object):
           .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
-          self.autoencode(image, self.save_dir, epoch+1, fake_image)
       # end of epoch
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
@@ -140,8 +139,6 @@ class Trainer(object):
       if (epoch+1) % 2 == 0:
         img = self.generate(z_fixed, self.save_dir, epoch+1)
         generated_images.append(img)
-        print("eposch image.device ", image.device)
-        print("eposch fake_image.device ", fake_image.device)
         self.autoencode(real_fixed_image, self.save_dir, epoch+1, fake_image)
 
     # Training finished.
