@@ -4,8 +4,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-dv = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-
 class G(nn.Module):
   def __init__(self):
     super(G, self).__init__()
@@ -95,12 +93,12 @@ class Encoder(nn.Module):
     in_channel, in_h, in_w = in_shape
     out_channel, out_h, out_w = out_shape
     layers = []
-    layers.append(nn.Conv2d(in_channel, out_channel, 3, 1, 1))
-    layers.append(nn.ELU(True))
+    # layers.append(nn.Conv2d(in_channel, out_channel, 3, 1, 1))
+    # layers.append(nn.ELU(True))
 
-    prev_channel_num = out_channel
+    prev_channel_num = in_channel
     for idx in range(repeat_num):
-      channel_num = out_channel * (idx + 1)
+      channel_num = in_channel * (idx + 1)
       layers.append(nn.Conv2d(prev_channel_num, channel_num, 3, 1, 1))
       layers.append(nn.ELU(True))
       if idx < repeat_num - 1:
@@ -109,22 +107,23 @@ class Encoder(nn.Module):
         layers.append(nn.Conv2d(channel_num, channel_num, 3, 1, 1))
       layers.append(nn.ELU(True))
       prev_channel_num = channel_num
+    layers.append(nn.Conv2d(prev_channel_num, out_channel, 3, 1, 1))
+    layers.append(nn.ELU(True))
 
     self.conv = nn.Sequential(*layers)
 
-  def _internal_step(self, x):
-    x = self.conv(x)
-    _, c, h, w = x.size()
-    dim = c * h * w
-    self.fc = nn.Linear(dim, np.prod(self.out_shape)).to(dv)
-    return x.view(-1, dim)
+  # def _internal_step(self, x):
+  #   x = self.conv(x)
+  #   _, c, h, w = x.size()
+  #   dim = c * h * w
+  #   self.fc = nn.Linear(dim, np.prod(self.out_shape)).to(dv)
+  #   return x.view(-1, dim)
 
   def forward(self, x):
-    x = self._internal_step(x)
-    x = self.fc(x).view([-1] + self.out_shape)
+    x = self.conv(x)
+    # print("encoder.out.size:", x.size())
     return x
     
-
 
 class Decoder(nn.Module):
   def __init__(self, in_shape, out_shape, repeat_num):
@@ -133,8 +132,6 @@ class Decoder(nn.Module):
     out_channel, out_h, out_w = out_shape
     layers = []
     for idx in range(repeat_num):
-      layers.append(nn.Conv2d(in_channel, in_channel, 3, 1, 1))
-      layers.append(nn.ELU(True))
       layers.append(nn.Conv2d(in_channel, in_channel, 3, 1, 1))
       layers.append(nn.ELU(True))
       if idx < repeat_num - 1:
@@ -147,85 +144,85 @@ class Decoder(nn.Module):
     x = self.conv(x)
     return x
 
-# class GeneratorCNN(nn.Module):
-#   def __init__(self, in_shape, out_shape, hidden_dim, repeat_num):
-#     super(GeneratorCNN, self).__init__()
-#     self.latent_shape = [hidden_dim, 8, 8]
-#     assert len(in_shape) == 2, "Input noise has shape, bs * noise_dim!"
-#     self.fc = nn.Linear(in_shape[-1], np.prod(self.latent_shape))
-#     self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
-# 
-#   def forward(self, x):
-#     x = self.fc(x).view([-1] + self.latent_shape)
-#     x = self.dec(x)
-#     return x
-# 
-# class DiscriminatorCNN(nn.Module):
-#   def __init__(self, in_shape, out_shape, hidden_dim, repeat_num):
-#     super(DiscriminatorCNN, self).__init__()
-#     self.latent_shape = [hidden_dim, 8, 8]
-#     self.enc = Encoder(in_shape, self.latent_shape, repeat_num)
-#     self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
-# 
-#   def forward(self, x):
-#     latent = self.enc(x)
-#     x = self.dec(latent)
-#     # return latent, x
-#     return x
-#     
-#     # Encoder
-#     # 怎么把conv1_output_dim推导出来，其实就是出来之后的空间结构
-#     # 要把它记住
-
 class GeneratorCNN(nn.Module):
-  def __init__(self, in_shape, out_shape, hidden_dim):
+  def __init__(self, in_shape, out_shape, hidden_dim, repeat_num):
     super(GeneratorCNN, self).__init__()
-    assert len(in_shape) == 2, "noise must have shape [bs, noise_dim]"
     self.latent_shape = [hidden_dim, 8, 8]
-
-    self.fc = nn.Sequential(
-      nn.Linear(in_shape[-1], 1024),
-      nn.BatchNorm1d(1024),
-      nn.ReLU(),
-      nn.Linear(1024, np.prod(self.latent_shape)),
-      nn.BatchNorm1d(np.prod(self.latent_shape)),
-      nn.ReLU(),
-    )
-
-    self.deconv = nn.Sequential(
-      nn.ConvTranspose2d(hidden_dim, 64, 4, 2, 1),
-      nn.BatchNorm2d(64),
-      nn.ReLU(),
-      nn.ConvTranspose2d(64, out_shape[0], 4, 2, 1),
-      nn.Tanh(),
-    )
+    assert len(in_shape) == 2, "Input noise has shape, bs * noise_dim!"
+    self.fc = nn.Linear(in_shape[-1], np.prod(self.latent_shape))
+    self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
 
   def forward(self, x):
     x = self.fc(x).view([-1] + self.latent_shape)
-    x = self.deconv(x)
+    x = self.dec(x)
     return x
 
 class DiscriminatorCNN(nn.Module):
-  def __init__(self, in_shape, out_shape, hidden_dim):
+  def __init__(self, in_shape, out_shape, hidden_dim, repeat_num):
     super(DiscriminatorCNN, self).__init__()
-    self.latent_shape = [hidden_dim//2, 16, 16]
-
-    self.conv = nn.Sequential(
-      nn.Conv2d(in_shape[0], self.latent_shape[0], 4, 2, 1),
-      nn.ReLU(),
-    )
-
-    self.fc1 = nn.Linear(np.prod(self.latent_shape), 32)
-    self.fc2 = nn.Linear(32, np.prod(self.latent_shape))
-
-    self.deconv = nn.Sequential(
-      nn.ConvTranspose2d(self.latent_shape[0], out_shape[0], 4, 2, 1),
-      # nn.Sigmoid(),
-    )
+    self.latent_shape = [hidden_dim, 8, 8]
+    self.enc = Encoder(in_shape, self.latent_shape, repeat_num)
+    self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
 
   def forward(self, x):
-    x = self.conv(x).view(-1, np.prod(self.latent_shape))
-    latent = self.fc1(x)
-    x = self.fc2(latent).view([-1] + self.latent_shape)
-    x = self.deconv(x)
+    latent = self.enc(x)
+    x = self.dec(latent)
+    # return latent, x
     return x
+    
+    # Encoder
+    # 怎么把conv1_output_dim推导出来，其实就是出来之后的空间结构
+    # 要把它记住
+
+# class GeneratorCNN(nn.Module):
+#   def __init__(self, in_shape, out_shape, hidden_dim):
+#     super(GeneratorCNN, self).__init__()
+#     assert len(in_shape) == 2, "noise must have shape [bs, noise_dim]"
+#     self.latent_shape = [hidden_dim, 8, 8]
+# 
+#     self.fc = nn.Sequential(
+#       nn.Linear(in_shape[-1], 1024),
+#       nn.BatchNorm1d(1024),
+#       nn.ReLU(),
+#       nn.Linear(1024, np.prod(self.latent_shape)),
+#       nn.BatchNorm1d(np.prod(self.latent_shape)),
+#       nn.ReLU(),
+#     )
+# 
+#     self.deconv = nn.Sequential(
+#       nn.ConvTranspose2d(hidden_dim, 64, 4, 2, 1),
+#       nn.BatchNorm2d(64),
+#       nn.ReLU(),
+#       nn.ConvTranspose2d(64, out_shape[0], 4, 2, 1),
+#       nn.Tanh(),
+#     )
+# 
+#   def forward(self, x):
+#     x = self.fc(x).view([-1] + self.latent_shape)
+#     x = self.deconv(x)
+#     return x
+# 
+# class DiscriminatorCNN(nn.Module):
+#   def __init__(self, in_shape, out_shape, hidden_dim):
+#     super(DiscriminatorCNN, self).__init__()
+#     self.latent_shape = [hidden_dim//2, 16, 16]
+# 
+#     self.conv = nn.Sequential(
+#       nn.Conv2d(in_shape[0], self.latent_shape[0], 4, 2, 1),
+#       nn.ReLU(),
+#     )
+# 
+#     self.fc1 = nn.Linear(np.prod(self.latent_shape), 32)
+#     self.fc2 = nn.Linear(32, np.prod(self.latent_shape))
+# 
+#     self.deconv = nn.Sequential(
+#       nn.ConvTranspose2d(self.latent_shape[0], out_shape[0], 4, 2, 1),
+#       # nn.Sigmoid(),
+#     )
+# 
+#   def forward(self, x):
+#     x = self.conv(x).view(-1, np.prod(self.latent_shape))
+#     latent = self.fc1(x)
+#     x = self.fc2(latent).view([-1] + self.latent_shape)
+#     x = self.deconv(x)
+#     return x

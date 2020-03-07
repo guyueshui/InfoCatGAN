@@ -217,8 +217,8 @@ def get_data(dbname: str, data_root: str):
     
   elif dbname == 'CelebA':
     transform = transforms.Compose([
-      transforms.Resize(32),
-      transforms.CenterCrop(32),
+      transforms.Resize(64),
+      transforms.CenterCrop(64),
       transforms.ToTensor(),
     ])
 
@@ -319,3 +319,25 @@ def DrawDistribution(dataset, title='Distribution of dataset'):
   ax.set_xticks(label)
   ax.set_title(title)
   fig.show()
+
+def plot_loss(log: dict, path: str):
+  plt.style.use('ggplot')
+
+  # loss
+  # plt.figure(figsize=(10, 5))
+  plt.title('GAN Loss')
+  plt.plot(log['g_loss'], label='G', linewidth=1)
+  plt.plot(log['d_loss'], label='D', linewidth=1)
+  plt.xlabel('Iterations')
+  plt.ylabel('Loss')
+  plt.legend()
+  plt.tight_layout()
+  plt.savefig(path + '/gan_loss.png')
+  plt.close('all')
+  
+def print_network(net):
+  num_params = 0
+  for param in net.parameters():
+    num_params += param.numel()
+  print(net)
+  print("Total number of parameters: %d." % num_params)

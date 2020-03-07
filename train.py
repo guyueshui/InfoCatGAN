@@ -1,3 +1,7 @@
+# TODO:
+# [x] Plot loss and meaningful params
+# [ ] Modify network structure
+
 import os
 import torch
 import torchvision
@@ -6,11 +10,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.utils as vutils
 import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 
 import models.celeba as nets
 from torch.utils.data import DataLoader
 
-from utils import get_data, weights_init, ETimer, generate_animation
+from utils import get_data, weights_init, ETimer, generate_animation, plot_loss, print_network
 from config import get_config
 
 class Trainer(object):
@@ -42,6 +47,8 @@ class Trainer(object):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
+    self.log['k_t'] = []
+    self.log['lr'] = [self.config.lr]
     self.measure = {} # convergence measure
     self.measure['pre'] = []
     self.measure['pre'].append(1)
@@ -63,7 +70,6 @@ class Trainer(object):
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
     real_fixed_image = next(iter(dataloader))[0].to(dv)
-    print("real_fixed_image.size ", real_fixed_image.size())
 
     # Training...
     print('-'*25)
@@ -76,6 +82,7 @@ class Trainer(object):
     t0 = ETimer() # train timer
     t1 = ETimer() # epoch timer
     k_t = 0
+    self.log['k_t'].append(k_t)
 
     self.D.train()
     for epoch in range(self.config.num_epoch):
@@ -117,6 +124,7 @@ class Trainer(object):
         # update k_t
         k_t += self.lambda_k * balance
         k_t = max(0, min(1, k_t))
+        self.log['k_t'].append(k_t)
 
         # Print progress...
         if (num_iter+1) % 500 == 0:
@@ -135,6 +143,7 @@ class Trainer(object):
         print('M_pre: ' + str(np.mean(self.measure['pre'])) + ', M_cur: ' + str(np.mean(self.measure['cur'])))
         self.measure['pre'] = self.measure['cur']
         self.measure['cur'] = []
+      self.log['lr'].append(self.lr)
       
       if (epoch+1) % 2 == 0:
         img = self.generate(z_fixed, self.save_dir, epoch+1)
@@ -147,6 +156,8 @@ class Trainer(object):
     print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
     print('-'*50)
     generate_animation(self.save_dir, generated_images)
+    plot_loss(self.log, self.save_dir)    
+    self.plot_param(self.log, self.save_dir)
 
   
   def build_model(self):
@@ -154,16 +165,20 @@ class Trainer(object):
     assert height == width, "Height and width must equal."
     repeat_num = int(np.log2(height)) - 2
     self.G = nets.GeneratorCNN([self.batch_size, self.num_noise_dim], 
-                               [3, 32, 32],
+                               [3, 64, 64],
                                self.config.hidden_dim,
+                               repeat_num
                                )
-    self.D = nets.DiscriminatorCNN([3, 32, 32],
-                                   [3, 32, 32],
+    self.D = nets.DiscriminatorCNN([3, 64, 64],
+                                   [3, 64, 64],
                                    self.config.hidden_dim,
+                                   repeat_num
                                    )
     for i in [self.G, self.D]:
       i.apply(weights_init)
       i.to(self.config.device)
+    print_network(self.G)
+    print_network(self.D)
   
   def generate(self, noise, path, idx=None):
     self.G.eval()
@@ -186,12 +201,30 @@ class Trainer(object):
       fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
       fake_img = self.D(fake_inputs)
       vutils.save_image(fake_img, fake_img_path)
+  
+  def plot_param(self, log: dict, path: str):
+    plt.style.use('ggplot')
+    # plt.figure(figsize=(10, 5))
+    plt.title('K_t')
+    plt.plot(log['k_t'], linewidth=1)
+    plt.xlabel('Iterations')
+    plt.tight_layout()
+    plt.savefig(path + '/k_t.png')
+    plt.close('all')
+
+    plt.title('Learning rate with epoch')
+    plt.plot(log['lr'], linewidth=1)
+    plt.xlabel('Epochs')
+    plt.tight_layout()
+    plt.savefig(path + '/lr.png')
+    plt.close('all')
 
 
 def main(config):
   assert config.dataset == 'CelebA', "CelebA support only."
   dataset = get_data('CelebA', config.data_root)
-  print("this is celeba dataset, len ", len(dataset))
+  print("This is celeba dataset, " \
+        "{} images will be used in training.".format(len(dataset)))
 
   if config.gpu == 0:  # GPU selection.
     config.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
