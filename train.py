@@ -147,7 +147,7 @@ class Trainer(object):
         self.measure['cur'] = []
       self.log['lr'].append(self.lr)
       
-      if (epoch+1) % 2 == 0:
+      if (epoch+1) % 1 == 0:
         img = self.generate(z_fixed, self.save_dir, epoch+1)
         generated_images.append(img)
         self.autoencode(real_fixed_image, self.save_dir, epoch+1, fake_image)

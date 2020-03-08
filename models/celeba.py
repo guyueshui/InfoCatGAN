@@ -4,6 +4,16 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+class ParallelNet(nn.Module):
+  def forward(self, x):
+    gpu_ids = None
+    if isinstance(x.data, torch.cuda.FloatTensor):
+      gpu_ids = range(2)
+    if gpu_ids:
+      return nn.parallel.data_parallel(self.main, x, gpu_ids)
+    else:
+      return self.main(x)
+
 class G(nn.Module):
   def __init__(self):
     super(G, self).__init__()
