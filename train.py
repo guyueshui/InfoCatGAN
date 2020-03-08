@@ -49,6 +49,7 @@ class Trainer(object):
     self.log['g_loss'] = []
     self.log['k_t'] = []
     self.log['lr'] = [self.config.lr]
+    self.log['measure'] = [1]
     self.measure = {} # convergence measure
     self.measure['pre'] = []
     self.measure['pre'].append(1)
@@ -121,6 +122,7 @@ class Trainer(object):
         balance = (self.gamma * d_loss_real - g_loss).item()
         temp_measure = d_loss_real + abs(balance)
         self.measure['cur'] = temp_measure.item()
+        self.log['measure'].append(self.measure['cur'])
         # update k_t
         k_t += self.lambda_k * balance
         k_t = max(0, min(1, k_t))
@@ -217,6 +219,13 @@ class Trainer(object):
     plt.xlabel('Epochs')
     plt.tight_layout()
     plt.savefig(path + '/lr.png')
+    plt.close('all')
+
+    plt.title('Convergence measure')
+    plt.plot(log['measure'], linewidth=1)
+    plt.xlabel('Iterations')
+    plt.tight_layout()
+    plt.savefig(path + '/measure.png')
     plt.close('all')
 
 
