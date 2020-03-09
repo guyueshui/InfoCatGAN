@@ -97,18 +97,16 @@ class Q(nn.Module):
     return disc_logits, mu, var
 
 class Encoder(nn.Module):
-  def __init__(self, in_shape, out_shape, repeat_num):
+  def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
     super(Encoder, self).__init__()
-    self.out_shape = out_shape
-    in_channel, in_h, in_w = in_shape
-    out_channel, out_h, out_w = out_shape
+    self.latent_shape = [hidden_dim, 8, 8]
     layers = []
-    # layers.append(nn.Conv2d(in_channel, out_channel, 3, 1, 1))
-    # layers.append(nn.ELU(True))
+    layers.append(nn.Conv2d(in_dim, hidden_dim, 3, 1, 1))
+    layers.append(nn.ELU(True))
 
-    prev_channel_num = in_channel
+    prev_channel_num = hidden_dim
     for idx in range(repeat_num):
-      channel_num = in_channel * (idx + 1)
+      channel_num = hidden_dim * (idx + 1)
       layers.append(nn.Conv2d(prev_channel_num, channel_num, 3, 1, 1))
       layers.append(nn.ELU(True))
       if idx < repeat_num - 1:
@@ -117,62 +115,61 @@ class Encoder(nn.Module):
         layers.append(nn.Conv2d(channel_num, channel_num, 3, 1, 1))
       layers.append(nn.ELU(True))
       prev_channel_num = channel_num
-    layers.append(nn.Conv2d(prev_channel_num, out_channel, 3, 1, 1))
-    layers.append(nn.ELU(True))
 
     self.conv = nn.Sequential(*layers)
-
-  # def _internal_step(self, x):
-  #   x = self.conv(x)
-  #   _, c, h, w = x.size()
-  #   dim = c * h * w
-  #   self.fc = nn.Linear(dim, np.prod(self.out_shape)).to(dv)
-  #   return x.view(-1, dim)
+    self.flat_dim = repeat_num*hidden_dim*8*8
+    self.fc = nn.Linear(self.flat_dim, out_dim)
 
   def forward(self, x):
-    x = self.conv(x)
+    x = self.conv(x).view(-1, self.flat_dim)
     # print("encoder.out.size:", x.size())
+    x = self.fc(x)
     return x
     
 
 class Decoder(nn.Module):
-  def __init__(self, in_shape, out_shape, repeat_num):
+  def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
     super(Decoder, self).__init__()
-    in_channel, in_h, in_w = in_shape
-    out_channel, out_h, out_w = out_shape
+
+    self.latent_shape = [hidden_dim, 8, 8]
+    self.fc = nn.Linear(in_dim, np.prod(self.latent_shape))
     layers = []
     for idx in range(repeat_num):
-      layers.append(nn.Conv2d(in_channel, in_channel, 3, 1, 1))
+      layers.append(nn.Conv2d(hidden_dim, hidden_dim, 3, 1, 1))
+      layers.append(nn.ELU(True))
+      layers.append(nn.Conv2d(hidden_dim, hidden_dim, 3, 1, 1))
       layers.append(nn.ELU(True))
       if idx < repeat_num - 1:
         layers.append(nn.UpsamplingNearest2d(scale_factor=2))
-    layers.append(nn.Conv2d(in_channel, out_channel, 3, 1, 1))
+    layers.append(nn.Conv2d(hidden_dim, out_dim, 3, 1, 1))
     layers.append(nn.ELU(True))
     self.conv = nn.Sequential(*layers)
   
   def forward(self, x):
+    x = self.fc(x).view([-1] + self.latent_shape)
     x = self.conv(x)
+    # print("decoder.out ", x.size())
     return x
 
 class GeneratorCNN(nn.Module):
   def __init__(self, in_shape, out_shape, hidden_dim, repeat_num):
     super(GeneratorCNN, self).__init__()
-    self.latent_shape = [hidden_dim, 8, 8]
+    self.latent_dim = 64
     assert len(in_shape) == 2, "Input noise has shape, bs * noise_dim!"
-    self.fc = nn.Linear(in_shape[-1], np.prod(self.latent_shape))
-    self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
+    self.fc = nn.Linear(in_shape[-1], self.latent_dim)
+    self.dec = Decoder(self.latent_dim, out_shape[0], hidden_dim, repeat_num)
 
   def forward(self, x):
-    x = self.fc(x).view([-1] + self.latent_shape)
+    x = self.fc(x)
     x = self.dec(x)
     return x
 
 class DiscriminatorCNN(nn.Module):
   def __init__(self, in_shape, out_shape, hidden_dim, repeat_num):
     super(DiscriminatorCNN, self).__init__()
-    self.latent_shape = [hidden_dim, 8, 8]
-    self.enc = Encoder(in_shape, self.latent_shape, repeat_num)
-    self.dec = Decoder(self.latent_shape, out_shape, repeat_num)
+    self.latent_dim = 64
+    self.enc = Encoder(in_shape[0], self.latent_dim, hidden_dim, repeat_num)
+    self.dec = Decoder(self.latent_dim, out_shape[0], hidden_dim, repeat_num)
 
   def forward(self, x):
     latent = self.enc(x)

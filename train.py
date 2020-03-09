@@ -129,11 +129,13 @@ class Trainer(object):
         self.log['k_t'].append(k_t)
 
         # Print progress...
-        if (num_iter+1) % 500 == 0:
+        if (num_iter+1) % 100 == 0:
           print('Epoch: ({:3.0f}/{:3.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
           .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
+          img = self.generate(z_fixed, self.save_dir, epoch+1)
+          self.autoencode(real_fixed_image, self.save_dir, epoch+1)
       # end of epoch
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
