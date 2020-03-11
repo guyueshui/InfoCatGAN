@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import time as t
 import imageio
 import math
+import os
 
 from torchvision.datasets import VisionDataset
 
@@ -330,7 +331,7 @@ def plot_loss(log: dict, path: str):
   plt.plot(log['d_loss'], label='D', linewidth=1)
   plt.xlabel('Iterations')
   plt.ylabel('Loss')
-  plt.legend()
+  plt.legend(loc='upper right')
   plt.tight_layout()
   plt.savefig(path + '/gan_loss.png')
   plt.close('all')
@@ -341,3 +342,17 @@ def print_network(net):
     num_params += param.numel()
   print(net)
   print("Total number of parameters: %d." % num_params)
+
+class BaseModel(object):
+  def __init__(self, config, dataset):
+    self.config = config
+    self.dataset = dataset
+    save_dir = os.path.join(os.getcwd(), 'results', 
+                            config.dataset, config.experiment_tag)
+    if not os.path.exists(save_dir):
+      os.makedirs(save_dir)
+    self.save_dir = save_dir
+    # Write experiment settings to file.
+    with open(os.path.join(save_dir, 'config.txt'), 'w') as f:
+      for k, v in config.__dict__.items():
+        f.write('{:>15s} : {:<}\n'.format(str(k), str(v)))
