@@ -1,3 +1,6 @@
+# TODO:
+# [ ] try improved infogan loss
+# [ ] modify network architecture
 import os
 import torch
 import torchvision
@@ -159,7 +162,7 @@ class InfoGAN(utils.BaseModel):
       if (epoch+1) % 1 == 0:
         img = self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
-        self.autoencode(real_fixed_image, self.save_dir, epoch+1, fake_image)
+        self.autoencode(real_fixed_image, self.save_dir, epoch+1)
 
     # Training finished.
     training_time = t0.elapsed()
@@ -178,13 +181,13 @@ class InfoGAN(utils.BaseModel):
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    repeat_num = int(np.log2(height)) - 1
+    # repeat_num = int(np.log2(height)) - 1
     hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
-    latent_dim = 32 # embedding latent vector dim
-    self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim, repeat_num)
-    self.FD = nets.Dbody(channel, latent_dim, hidden_dim, repeat_num)
-    self.D = nets.Dhead(latent_dim, channel, hidden_dim, repeat_num)
+    latent_dim = 64 # embedding latent vector dim
+    self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim)
+    self.FD = nets.Dbody(channel, latent_dim, hidden_dim)
+    self.D = nets.Dhead(latent_dim, channel, hidden_dim)
     self.Q = nets.Qhead(latent_dim, self.cat_dim, self.num_cont_code)
     for i in [self.G, self.FD, self.D, self.Q]:
       i.apply(utils.weights_init)
