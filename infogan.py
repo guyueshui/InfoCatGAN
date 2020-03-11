@@ -44,7 +44,7 @@ class InfoGAN(utils.BaseModel):
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim * self.num_disc_code).to(dv)
-    cont_c = torch.FloatTensor(bs, self.num_cont_code)
+    cont_c = torch.FloatTensor(bs, self.num_cont_code).to(dv)
     # Fixed random variables.
     fixz, cdis, c1, c2, c0 = self.generate_fix_noise()
     noise_fixed = np.hstack([fixz, cdis, c0])
@@ -240,11 +240,11 @@ class InfoGAN(utils.BaseModel):
   def autoencode(self, inputs, path, idx=None, fake_inputs=None):
     img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
     img = self.D(self.FD(inputs))
-    vutils.save_image(img, img_path)
+    vutils.save_image(img, img_path, nrow=10)
     if fake_inputs is not None:
       fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
-      fake_img = self.D(fake_inputs)
-      vutils.save_image(fake_img, fake_img_path)
+      fake_img = self.D(self.FD(fake_inputs))
+      vutils.save_image(fake_img, fake_img_path, nrow=10)
   
   def plot_param(self, log: dict, path: str):
     plt.style.use('ggplot')
