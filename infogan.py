@@ -60,7 +60,8 @@ class InfoGAN(utils.BaseModel):
 
     AeLoss = nn.L1Loss().to(dv)
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
-    QcontLoss = utils.LogGaussian()
+    QcontLoss = nn.MSELoss().to(dv)
+    # QcontLoss = utils.LogGaussian()
 
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
@@ -104,10 +105,16 @@ class InfoGAN(utils.BaseModel):
         d_loss_real = AeLoss(d_real, image)
 
         fake_image = self.G(noise)
-        d_fake = self.D(self.FD(fake_image.detach()))
+        d_body_out = self.FD(fake_image.detach())
+        d_fake = self.D(d_body_out)
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
 
-        d_loss = d_loss_real - k_t * d_loss_fake
+        q_logits, q_cont = self.Q(d_body_out)
+        targets = torch.LongTensor(idx).to(dv)
+        q_loss_disc = QdiscLoss(q_logits, targets) * 0.8
+        q_loss_conc = QcontLoss(cont_c, q_cont) * 0.2
+
+        d_loss = d_loss_real - k_t * d_loss_fake + q_loss_disc + q_loss_conc
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_loss.backward()
         d_optim.step()
@@ -118,10 +125,10 @@ class InfoGAN(utils.BaseModel):
         d_fake = self.D(d_body_out)
         reconstruct_loss = AeLoss(d_fake, fake_image)
 
-        q_logits, q_mu, q_var = self.Q(d_body_out)
+        q_logits, q_cont = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
         q_loss_disc = QdiscLoss(q_logits, targets) * 0.8
-        q_loss_conc = QcontLoss(cont_c, q_mu, q_var) * 0.2
+        q_loss_conc = QcontLoss(cont_c, q_cont) * 0.2
 
         g_loss = reconstruct_loss + q_loss_disc + q_loss_conc
         self.log['g_loss'].append(g_loss.cpu().detach().item())
@@ -144,8 +151,8 @@ class InfoGAN(utils.BaseModel):
           .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
-          self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
-          self.autoencode(real_fixed_image, self.save_dir, epoch+1)
+          # self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
+          # self.autoencode(real_fixed_image, self.save_dir, epoch+1)
       # end of epoch
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
@@ -184,7 +191,7 @@ class InfoGAN(utils.BaseModel):
     # repeat_num = int(np.log2(height)) - 1
     hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
-    latent_dim = 64 # embedding latent vector dim
+    latent_dim = 1024 # embedding latent vector dim
     self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim)
     self.FD = nets.Dbody(channel, latent_dim, hidden_dim)
     self.D = nets.Dhead(latent_dim, channel, hidden_dim)

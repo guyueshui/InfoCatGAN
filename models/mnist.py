@@ -347,12 +347,15 @@ class Qhead(nn.Module):
     )
 
     self.disc = nn.Linear(128, cat_dim)
-    self.mu = nn.Linear(128, num_cont_code)
-    self.var = nn.Linear(128, num_cont_code)
+    self.cont = nn.Sequential(
+      nn.Linear(128, num_cont_code),
+      nn.Tanh(),
+    )
+    # self.var = nn.Linear(128, num_cont_code)
 
   def forward(self, x):
     x = self.fc(x)
     disc_logits = self.disc(x)
-    mu = self.mu(x)
-    var = self.var(x).exp()
-    return disc_logits, mu, var
+    cont_codes = self.cont(x)
+    # var = self.var(x).exp() # use exp to ensure positivity
+    return disc_logits, cont_codes
