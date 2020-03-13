@@ -44,6 +44,8 @@ class InfoGAN(utils.BaseModel):
     
     bs = self.config.batch_size
     dv = self.config.device
+    real_label = 1
+    fake_label = 0
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim * self.num_disc_code).to(dv)
@@ -58,7 +60,7 @@ class InfoGAN(utils.BaseModel):
     fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(100, -1).to(dv)
     fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).view(100, -1).to(dv)
 
-    AeLoss = nn.L1Loss().to(dv)
+    DLoss = nn.BCELoss().to(dv)
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
     QcontLoss = nn.MSELoss().to(dv)
     # QcontLoss = utils.LogGaussian()
@@ -102,28 +104,34 @@ class InfoGAN(utils.BaseModel):
         # Update discriminator.
         d_optim.zero_grad()
         d_real = self.D(self.FD(image))
-        d_loss_real = AeLoss(d_real, image)
+        labels = torch.full_like(d_real, real_label, device=dv)
+        d_loss_real = DLoss(d_real, labels)
+        d_loss_real.backward()
 
         fake_image = self.G(noise)
         d_body_out = self.FD(fake_image.detach())
         d_fake = self.D(d_body_out)
-        d_loss_fake = AeLoss(d_fake, fake_image.detach())
+        labels.fill_(fake_label)
+        d_loss_fake = DLoss(d_fake, labels) 
+        d_loss_fake.backward(retain_graph=True)
 
         q_logits, q_cont = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
         q_loss_disc = QdiscLoss(q_logits, targets) * 0.8
         q_loss_conc = QcontLoss(cont_c, q_cont) * 0.2
+        q_loss = q_loss_disc + q_loss_conc
+        q_loss.backward()
 
-        d_loss = d_loss_real - k_t * d_loss_fake + q_loss_disc + q_loss_conc
+        d_loss = d_loss_real - k_t * d_loss_fake + q_loss
         self.log['d_loss'].append(d_loss.cpu().detach().item())
-        d_loss.backward()
         d_optim.step()
 
         # Update generator.
         g_optim.zero_grad()
         d_body_out = self.FD(fake_image)
         d_fake = self.D(d_body_out)
-        reconstruct_loss = AeLoss(d_fake, fake_image)
+        labels.fill_(real_label)
+        reconstruct_loss = DLoss(d_fake, labels)
 
         q_logits, q_cont = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
@@ -193,8 +201,8 @@ class InfoGAN(utils.BaseModel):
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
     self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim)
-    self.FD = nets.Dbody(channel, latent_dim, hidden_dim)
-    self.D = nets.Dhead(latent_dim, channel, hidden_dim)
+    self.FD = nets.Dbody(channel, latent_dim)
+    self.D = nets.Dhead(latent_dim, channel)
     self.Q = nets.Qhead(latent_dim, self.cat_dim, self.num_cont_code)
     for i in [self.G, self.FD, self.D, self.Q]:
       i.apply(utils.weights_init)

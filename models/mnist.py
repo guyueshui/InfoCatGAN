@@ -298,41 +298,38 @@ class GeneratorCNN(nn.Module):
     return x
 
 class Dbody(nn.Module):
-  def __init__(self, in_dim, out_dim, hidden_dim):
+  def __init__(self, in_dim, out_dim):
     super(Dbody, self).__init__()
-    self.latent_shape = [hidden_dim, 7, 7]
     # Encoder
     self.conv = nn.Sequential(
       nn.Conv2d(in_dim, 64, 4, 2, 1),
       nn.LeakyReLU(0.2),
-      nn.Conv2d(64, hidden_dim, 4, 2, 1),
-      nn.BatchNorm2d(hidden_dim),
+      nn.Conv2d(64, 128, 4, 2, 1),
+      nn.BatchNorm2d(128),
       nn.LeakyReLU(0.2),
     )
 
-    self.fc = nn.Linear(np.prod(self.latent_shape), out_dim)
+    self.fc = nn.Sequential(
+      nn.Linear(128*7*7, out_dim),
+      nn.BatchNorm1d(out_dim),
+      nn.LeakyReLU(0.2),
+    )
     
   def forward(self, x):
-    x = self.conv(x).view(-1, np.prod(self.latent_shape))
+    x = self.conv(x).view(-1, 128*7*7)
     x = self.fc(x)
     return x
 
 class Dhead(nn.Module):
-  def __init__(self, in_dim, out_dim, hidden_dim):
+  def __init__(self, in_dim, out_dim):
     super(Dhead, self).__init__()
-    self.latent_shape = [hidden_dim, 7, 7]
-    self.fc = nn.Linear(in_dim, np.prod(self.latent_shape))
-    self.deconv = nn.Sequential(
-      nn.ConvTranspose2d(hidden_dim, 64, 4, 2, 1),
-      nn.BatchNorm2d(64),
-      nn.ReLU(),
-      nn.ConvTranspose2d(64, out_dim, 4, 2, 1),
-      nn.Tanh(),
+    self.main = nn.Sequential(
+      nn.Linear(in_dim, 1),
+      nn.Sigmoid(),
     )
     
   def forward(self, x):
-    x = self.fc(x).view([-1] + self.latent_shape)
-    x = self.deconv(x)
+    x = self.main(x)
     return x
 
 class Qhead(nn.Module):
