@@ -7,7 +7,7 @@ import numpy as np
 import torchvision.utils as vutils
 
 from torch.utils.data import DataLoader
-from utils import Noiser, LogGaussian, ETimer, generate_animation, generate
+from utils import Noiser, LogGaussian, ETimer, generate_animation
 
 torch.set_default_tensor_type(torch.FloatTensor)
 
@@ -37,7 +37,7 @@ class Trainer:
     self._savepath = savepath
     # Write experiment settings to file.
     with open(os.path.join(savepath, 'config.json'), 'w') as f:
-      json.dump(config.__dict__, f, indent=4, sort_keys=True)
+      f.write(str(config.__dict__))
 
 
   def _sample(self, z, dis_c, con_c, prob, batch_size):
