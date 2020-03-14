@@ -119,5 +119,5 @@ if __name__ == '__main__':
   #   initc /= np.sum(initc)
   #   config.cat_prob = initc
 
-  # main(config)
   print(config)
+  main(config)

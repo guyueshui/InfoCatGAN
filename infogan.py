@@ -62,14 +62,14 @@ class InfoGAN(utils.BaseModel):
 
     DLoss = nn.BCELoss().to(dv)
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
-    QcontLoss = nn.MSELoss().to(dv)
-    # QcontLoss = utils.LogGaussian()
+    # QcontLoss = nn.MSELoss().to(dv)
+    QcontLoss = utils.LogGaussian()
 
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
       d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=lr, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=lr, betas=(self.config.beta1, self.config.beta2)),
+      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
+             optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
       
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
@@ -85,7 +85,7 @@ class InfoGAN(utils.BaseModel):
 
     t0 = utils.ETimer() # train timer
     t1 = utils.ETimer() # epoch timer
-    k_t = 0
+    k_t = 1
     self.log['k_t'].append(k_t)
 
     self.FD.train()
@@ -109,20 +109,13 @@ class InfoGAN(utils.BaseModel):
         d_loss_real.backward()
 
         fake_image = self.G(noise)
-        d_body_out = self.FD(fake_image.detach())
-        d_fake = self.D(d_body_out)
+        d_fake = self.D(self.FD(fake_image.detach()))
         labels.fill_(fake_label)
         d_loss_fake = DLoss(d_fake, labels) 
-        d_loss_fake.backward(retain_graph=True)
+        d_loss_fake.backward()
 
-        q_logits, q_cont = self.Q(d_body_out)
-        targets = torch.LongTensor(idx).to(dv)
-        q_loss_disc = QdiscLoss(q_logits, targets) * 0.8
-        q_loss_conc = QcontLoss(cont_c, q_cont) * 0.2
-        q_loss = q_loss_disc + q_loss_conc
-        q_loss.backward()
-
-        d_loss = d_loss_real - k_t * d_loss_fake + q_loss
+        # d_loss = d_loss_real - k_t * d_loss_fake
+        d_loss = d_loss_real + d_loss_fake
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_optim.step()
 
@@ -133,25 +126,25 @@ class InfoGAN(utils.BaseModel):
         labels.fill_(real_label)
         reconstruct_loss = DLoss(d_fake, labels)
 
-        q_logits, q_cont = self.Q(d_body_out)
+        q_logits, mu, var = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
         q_loss_disc = QdiscLoss(q_logits, targets) * 0.8
-        q_loss_conc = QcontLoss(cont_c, q_cont) * 0.2
+        q_loss_conc = QcontLoss(cont_c, mu, var) * 0.2
 
         g_loss = reconstruct_loss + q_loss_disc + q_loss_conc
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()
 
-        # Convergence metric.
-        balance = (self.gamma * d_loss_real - g_loss).item()
-        temp_measure = d_loss_real + abs(balance)
-        self.measure['cur'] = temp_measure.item()
-        self.log['measure'].append(self.measure['cur'])
-        # update k_t
-        k_t += (self.lambda_k * balance)
-        k_t = max(0, min(1, k_t))
-        self.log['k_t'].append(k_t)
+        # # Convergence metric.
+        # balance = (self.gamma * d_loss_real - reconstruct_loss).item()
+        # temp_measure = d_loss_real + abs(balance)
+        # self.measure['cur'] = temp_measure.item()
+        # self.log['measure'].append(self.measure['cur'])
+        # # update k_t
+        # k_t += (self.lambda_k * balance)
+        # k_t = max(0, min(1, k_t))
+        # self.log['k_t'].append(k_t)
 
         # Print progress...
         if (num_iter+1) % 100 == 0:
@@ -159,25 +152,22 @@ class InfoGAN(utils.BaseModel):
           .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
-          # self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
-          # self.autoencode(real_fixed_image, self.save_dir, epoch+1)
       # end of epoch
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
 
-      if np.mean(self.measure['pre']) < np.mean(self.measure['cur']):
-        self.lr *= 0.5
-        g_optim, d_optim = _get_optimizer(self.lr)
-      else:
-        print('M_pre: ' + str(np.mean(self.measure['pre'])) + ', M_cur: ' + str(np.mean(self.measure['cur'])))
-        self.measure['pre'] = self.measure['cur']
-        self.measure['cur'] = []
-      self.log['lr'].append(self.lr)
+      # if np.mean(self.measure['pre']) < np.mean(self.measure['cur']):
+      #   self.lr *= 0.5
+      #   g_optim, d_optim = _get_optimizer(self.lr)
+      # else:
+      #   print('M_pre: ' + str(np.mean(self.measure['pre'])) + ', M_cur: ' + str(np.mean(self.measure['cur'])))
+      #   self.measure['pre'] = self.measure['cur']
+      #   self.measure['cur'] = []
+      # self.log['lr'].append(self.lr)
       
       if (epoch+1) % 1 == 0:
         img = self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
-        self.autoencode(real_fixed_image, self.save_dir, epoch+1)
 
     # Training finished.
     training_time = t0.elapsed()
