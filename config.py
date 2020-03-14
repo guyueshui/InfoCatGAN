@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 
 def str2bool(v):
-  return v.lower() in ['True', '1']
+  return v.lower() in ['true', '1']
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_epoch', type=int, default=70)
