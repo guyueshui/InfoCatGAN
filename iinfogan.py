@@ -53,9 +53,9 @@ class IInfoGAN(utils.BaseModel):
     fixed_noise_1 = np.hstack([fixz, c1])
     fixed_noise_2 = np.hstack([fixz, c2])
     # NOTE: dtype should exactly match the network weight's type!
-    noise_fixed = torch.as_tensor(noise_fixed, dtype=torch.float32).view(64, -1).to(dv)
-    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(64, -1).to(dv)
-    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).view(64, -1).to(dv)
+    noise_fixed = torch.as_tensor(noise_fixed, dtype=torch.float32).view(100, -1).to(dv)
+    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(100, -1).to(dv)
+    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).view(100, -1).to(dv)
     
     AeLoss = nn.L1Loss().to(dv)
     QLoss = nn.MSELoss().to(dv)
@@ -209,14 +209,14 @@ class IInfoGAN(utils.BaseModel):
 
   def generate_fix_noise(self):
     'Generate fix noise for image generating during the whole training.'
-    fixz = torch.Tensor(64, self.z_dim).normal_(0, 1.0)
+    fixz = torch.Tensor(100, self.z_dim).normal_(0, 1.0)
 
-    c = np.linspace(-1, 1, 8).reshape(1, -1)
-    c = np.repeat(c, 8, 0).reshape(-1, 1)
+    c = np.linspace(-1, 1, 10).reshape(1, -1)
+    c = np.repeat(c, 10, 0).reshape(-1, 1)
 
     c1 = np.hstack([c, np.zeros_like(c)])
     c2 = np.hstack([np.zeros_like(c), c])
-    c3 = np.random.uniform(-1, 1, (64, self.c_dim))
+    c3 = np.random.uniform(-1, 1, (100, self.c_dim))
 
     return fixz.numpy(), c1, c2, c3
   
@@ -226,7 +226,7 @@ class IInfoGAN(utils.BaseModel):
     from PIL import Image
     from torchvision.utils import make_grid
     tensor = self.G(noise)
-    grid = make_grid(tensor, nrow=8, padding=2)
+    grid = make_grid(tensor, nrow=10, padding=2)
     # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
     ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
     im = Image.fromarray(ndarr)
@@ -236,11 +236,11 @@ class IInfoGAN(utils.BaseModel):
   def autoencode(self, inputs, path, idx=None, fake_inputs=None):
     img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
     _, img = self.D(inputs)
-    vutils.save_image(img, img_path)
+    vutils.save_image(img, img_path, nrow=10)
     if fake_inputs is not None:
       fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
       _, fake_img = self.D(fake_inputs)
-      vutils.save_image(fake_img, fake_img_path)
+      vutils.save_image(fake_img, fake_img_path, nrow=10)
   
   def plot_param(self, log: dict, path: str):
     plt.style.use('ggplot')
