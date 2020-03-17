@@ -61,8 +61,10 @@ class IInfoGAN(utils.BaseModel):
     QLoss = nn.MSELoss().to(dv)
 
     def _get_optimizer(lr):
-      return optim.Adam(self.G.parameters(), lr=lr, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(self.D.parameters(), lr=lr, betas=(self.config.beta1, self.config.beta2)),
+      g_parameters = [{'params':self.G.parameters()}, {'params':self.Q.parameters()}]
+      d_parameters = [{'params':self.D.parameters()}, {'params':self.Q.parameters()}]
+      return optim.Adam(g_parameters, lr=lr, betas=(self.config.beta1, self.config.beta2)), \
+             optim.Adam(d_parameters, lr=lr, betas=(self.config.beta1, self.config.beta2)),
     
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
@@ -102,10 +104,10 @@ class IInfoGAN(utils.BaseModel):
         latent, d_fake = self.D(fake_image.detach())
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
 
-        q_c = self.Q(latent)
-        q_loss_D = QLoss(c, q_c)
+        # q_c = self.Q(latent)
+        # q_loss_D = QLoss(c, q_c)
 
-        d_loss = d_loss_real - k_t * d_loss_fake + q_loss_D
+        d_loss = d_loss_real - k_t * d_loss_fake #+ q_loss_D
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_loss.backward()
         d_optim.step()
@@ -115,14 +117,15 @@ class IInfoGAN(utils.BaseModel):
         latent, d_fake = self.D(fake_image)
         q_c = self.Q(latent)
         q_loss_G = QLoss(c, q_c)
-        g_loss = AeLoss(d_fake, fake_image) + q_loss_G
+        loss_g = AeLoss(d_fake, fake_image)
+        g_loss = loss_g + q_loss_G
 
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()
 
         # Convergence metric.
-        balance = (self.gamma * d_loss_real - g_loss).item()
+        balance = (self.gamma * d_loss_real - loss_g).item()
         temp_measure = d_loss_real + abs(balance)
         self.measure['cur'] = temp_measure.item()
         self.log['measure'].append(self.measure['cur'])
@@ -223,11 +226,11 @@ class IInfoGAN(utils.BaseModel):
 
   def autoencode(self, inputs, path, idx=None, fake_inputs=None):
     img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
-    img = self.D(inputs)
+    _, img = self.D(inputs)
     vutils.save_image(img, img_path)
     if fake_inputs is not None:
       fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
-      fake_img = self.D(fake_inputs)
+      _, fake_img = self.D(fake_inputs)
       vutils.save_image(fake_img, fake_img_path)
   
   def plot_param(self, log: dict, path: str):

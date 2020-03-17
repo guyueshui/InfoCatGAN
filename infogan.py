@@ -85,7 +85,7 @@ class InfoGAN(utils.BaseModel):
 
     t0 = utils.ETimer() # train timer
     t1 = utils.ETimer() # epoch timer
-    k_t = 1
+    k_t = 0
     self.log['k_t'].append(k_t)
 
     self.FD.train()
