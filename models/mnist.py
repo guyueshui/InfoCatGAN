@@ -217,17 +217,46 @@ class Decoder(nn.Module):
     # print("decoder.out ", x.size())
     return x
 
+# class GeneratorCNN(nn.Module):
+#   def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
+#     super(GeneratorCNN, self).__init__()
+#     self.latent_dim = 32
+#     self.fc = nn.Linear(in_dim, self.latent_dim)
+#     self.dec = Decoder(self.latent_dim, out_dim, hidden_dim, repeat_num)
+#   
+#   def forward(self, x):
+#     x = self.fc(x)
+#     x = self.dec(x)
+#     return x
+
 class GeneratorCNN(nn.Module):
   def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
     super(GeneratorCNN, self).__init__()
-    self.latent_dim = 32
-    self.fc = nn.Linear(in_dim, self.latent_dim)
-    self.dec = Decoder(self.latent_dim, out_dim, hidden_dim, repeat_num)
+
+    self.fc = nn.Sequential(
+      nn.Linear(in_dim, 1024),
+      nn.BatchNorm1d(1024),
+      nn.ReLU(),
+      nn.Linear(1024, 128 * 7 * 7), # bs x 128*7*7
+      nn.BatchNorm1d(128 * 7 * 7),
+      nn.ReLU(),
+    )
+
+    # torch.Size([bs, 128, 7, 7])
+    self.deconv = nn.Sequential(
+      nn.ConvTranspose2d(128, 64, 4, 2, 1), # bs x 64 x 14 x 14
+      nn.BatchNorm2d(64),
+      nn.ReLU(),
+      nn.ConvTranspose2d(64, self.out_dim, 4, 2, 1), # bs x output_dim x 28 x 28
+      nn.Tanh()
+    )
+    # torch.Size([bs, 1, 28, 28])
   
   def forward(self, x):
-    x = self.fc(x)
-    x = self.dec(x)
+    x = self.fc(x).view(-1, 128, 7, 7)
+    x = self.deconv(x)
     return x
+
 
 class DiscriminatorCNN(nn.Module):
   def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
