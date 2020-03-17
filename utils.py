@@ -356,3 +356,11 @@ class BaseModel(object):
     with open(os.path.join(save_dir, 'config.txt'), 'w') as f:
       for k, v in config.__dict__.items():
         f.write('{:>15s} : {:<}\n'.format(str(k), str(v)))
+  
+  def save_model(self, path, idx=None, *models):
+    dic = {}
+    for m in models:
+      dic[m.__class__.__name__] = m.state_dict()
+    fname = os.path.join(path, 'model-epoch-{}.pt'.format(idx))
+    torch.save(dic, fname)
+    print("-- model saved as ", fname)

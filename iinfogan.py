@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
-import models.celeba as nets
+import models.mnist as nets
 from config import get_config
 
 class IInfoGAN(utils.BaseModel):
@@ -27,7 +27,7 @@ class IInfoGAN(utils.BaseModel):
     self.gamma = self.config.gamma
     self.lambda_k = self.config.lambda_k
 
-    self.build_model()
+    self.models = self.build_model()
 
   def train(self):
     self.log = {}
@@ -104,10 +104,10 @@ class IInfoGAN(utils.BaseModel):
         latent, d_fake = self.D(fake_image.detach())
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
 
-        # q_c = self.Q(latent)
-        # q_loss_D = QLoss(c, q_c)
+        q_c = self.Q(latent)
+        q_loss_D = QLoss(c, q_c)
 
-        d_loss = d_loss_real - k_t * d_loss_fake #+ q_loss_D
+        d_loss = d_loss_real - k_t * d_loss_fake + q_loss_D
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_loss.backward()
         d_optim.step()
@@ -164,6 +164,7 @@ class IInfoGAN(utils.BaseModel):
     training_time = t0.elapsed()
     print('-'*50)
     print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
+    self.save_model(self.save_dir, self.config.num_epoch, *self.models)
     print('-'*50)
 
     # Manipulating continuous latent codes.
@@ -178,17 +179,25 @@ class IInfoGAN(utils.BaseModel):
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    repeat_num = int(np.log2(height)) - 2
+    latent_dim = 0  # latent space vector dim
+    if self.config.dataset == 'CelebA':
+      repeat_num = int(np.log2(height)) - 2
+      latent_dim = 64
+    elif self.config.dataset == 'MNIST':
+      repeat_num = int(np.log2(height)) - 1
+      latent_dim = 32
+    else:
+      raise NotImplementedError
     noise_dim = self.z_dim + self.c_dim
     hidden_dim = self.config.hidden_dim
     self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim, repeat_num)
     self.D = nets.DiscriminatorCNN(channel, channel, hidden_dim, repeat_num)
-    self.Q = nets.Qhead(64, self.c_dim)
+    self.Q = nets.Qhead(latent_dim, self.c_dim)
     for i in [self.G, self.D, self.Q]:
       i.apply(utils.weights_init)
       i.to(self.config.device)
-    utils.print_network(self.G)
-    utils.print_network(self.D)
+      utils.print_network(i)
+    return self.G, self.D, self.Q
 
   def generate_noise(self, z, c):
     'Generate samples for G\'s input.'
@@ -259,10 +268,16 @@ class IInfoGAN(utils.BaseModel):
 
 
 def main(config):
-  assert config.dataset == 'CelebA', "CelebA support only."
-  dataset = utils.get_data('CelebA', config.data_root)
-  print("This is celeba dataset, " \
-        "{} images will be used in training.".format(len(dataset)))
+  if config.dataset == 'CelebA':
+    import models.celeba as nets
+    dataset = utils.get_data('CelebA', config.data_root)
+    print("This is celeba dataset, " \
+          "{} images will be used in training.".format(len(dataset)))
+  elif config.dataset == 'MNIST':
+    import models.mnist as nets
+    dataset = utils.get_data('MNIST', config.data_root)
+  else:
+    raise NotImplementedError
 
   if config.gpu == 0:  # GPU selection.
     config.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
