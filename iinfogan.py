@@ -104,10 +104,10 @@ class IInfoGAN(utils.BaseModel):
         latent, d_fake = self.D(fake_image.detach())
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
 
-        q_c = self.Q(latent)
-        q_loss_D = QLoss(c, q_c)
+        # q_c = self.Q(latent)
+        # q_loss_D = QLoss(c, q_c)
 
-        d_loss = d_loss_real - k_t * d_loss_fake + q_loss_D
+        d_loss = d_loss_real - k_t * d_loss_fake #+ q_loss_D
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_loss.backward()
         d_optim.step()
