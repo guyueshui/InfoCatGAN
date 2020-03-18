@@ -18,8 +18,8 @@ def main(config):
   else:
     raise NotImplementedError
 
-  t = BEGAN(config, dataset)
-  t.train()
+  gan = IInfoGAN(config, dataset)
+  gan.train()
 
 
 if __name__ == '__main__':

@@ -248,7 +248,7 @@ class GeneratorCNN(nn.Module):
       nn.BatchNorm2d(64),
       nn.ReLU(),
       nn.ConvTranspose2d(64, out_dim, 4, 2, 1), # bs x output_dim x 28 x 28
-      nn.Sigmoid(),
+      nn.Tanh(),
     )
     # torch.Size([bs, 1, 28, 28])
   
@@ -262,26 +262,29 @@ class DiscriminatorCNN(nn.Module):
   # Architecture from: https://github.com/hwalsuklee/tensorflow-generative-model-collections/blob/master/BEGAN.py
   def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
     super(DiscriminatorCNN, self).__init__()
-    self.down_shape = [64, 14, 14]
+    self.down_shape = [128, 7, 7]
     self.conv = nn.Sequential(
       nn.Conv2d(in_dim, 64, 4, 2, 1),
-      nn.ReLU(),
+      nn.LeakyReLU(0.2),
+      nn.Conv2d(64, 128, 4, 2, 1),
+      nn.LeakyReLU(0.2),
     )
     self.fc1 = nn.Sequential(
-      nn.Linear(np.prod(self.down_shape), 32),
-      nn.BatchNorm1d(32),
-      nn.ReLU(),
+      nn.Linear(np.prod(self.down_shape), 1024),
+      nn.BatchNorm1d(1024),
+      nn.LeakyReLU(0.2),
     )
     self.fc2 = nn.Sequential(
-      nn.Linear(32, np.prod(self.down_shape)),
+      nn.Linear(1024, np.prod(self.down_shape)),
       nn.BatchNorm1d(np.prod(self.down_shape)),
-      nn.ReLU(),
+      nn.LeakyReLU(0.2),
     )
     self.deconv = nn.Sequential(
+      nn.ConvTranspose2d(128, 64, 4, 2, 1),
+      nn.LeakyReLU(0.2),
       nn.ConvTranspose2d(64, out_dim, 4, 2, 1),
-      nn.Sigmoid(),
+      nn.Tanh(),
     )
-
 
   def forward(self, x):
     x = self.conv(x).view(-1, np.prod(self.down_shape))
@@ -295,8 +298,23 @@ class Qhead(nn.Module):
   def __init__(self, in_dim, out_dim):
     super(Qhead, self).__init__()
     self.fc = nn.Sequential(
-      nn.Linear(in_dim, out_dim),
+      nn.Linear(1024, 128),
+      nn.BatchNorm1d(128),
+      nn.LeakyReLU(0.2),
+      nn.Linear(128, out_dim),
       nn.Tanh(),
+    )
+  
+  def forward(self, x):
+    x = self.fc(x)
+    return x 
+
+class DProb(nn.Module):
+  def __init__(self, in_dim=1024, out_dim=1):
+    super(DProb, self).__init__()
+    self.fc = nn.Sequential(
+      nn.Linear(in_dim, out_dim),
+      nn.Sigmoid(),
     )
   
   def forward(self, x):

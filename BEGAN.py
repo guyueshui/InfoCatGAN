@@ -12,7 +12,7 @@ import torchvision.utils as vutils
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 
-import models.celeba as nets
+import models.mnist as nets
 from torch.utils.data import DataLoader
 
 import utils

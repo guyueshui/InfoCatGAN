@@ -43,27 +43,33 @@ class IInfoGAN(utils.BaseModel):
     
     bs = self.config.batch_size
     dv = self.device
+    real_label = 1
+    fake_label = 0
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     c = torch.FloatTensor(bs, self.c_dim).to(dv)
+    labels = torch.FloatTensor(bs, 1).to(dv)
     # Fixed nosies
     fixz, c1, c2, c0 = self.generate_fix_noise()
     noise_fixed = np.hstack([fixz, c0])
     fixed_noise_1 = np.hstack([fixz, c1])
     fixed_noise_2 = np.hstack([fixz, c2])
     # NOTE: dtype should exactly match the network weight's type!
-    noise_fixed = torch.as_tensor(noise_fixed, dtype=torch.float32).view(100, -1).to(dv)
-    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(100, -1).to(dv)
-    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).view(100, -1).to(dv)
+    noise_fixed = torch.as_tensor(noise_fixed, dtype=torch.float32).to(dv)
+    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).to(dv)
+    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).to(dv)
     
     AeLoss = nn.L1Loss().to(dv)
-    QLoss = nn.MSELoss().to(dv)
+    MSELoss = nn.MSELoss().to(dv)
+    BCELoss = nn.BCELoss().to(dv)
 
     def _get_optimizer(lr):
+      d_lr = lr
+      g_lr = d_lr * 5
       g_parameters = [{'params':self.G.parameters()}, {'params':self.Q.parameters()}]
-      d_parameters = [{'params':self.D.parameters()}, {'params':self.Q.parameters()}]
-      return optim.Adam(g_parameters, lr=lr, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_parameters, lr=lr, betas=(self.config.beta1, self.config.beta2)),
+      d_parameters = [{'params':self.D.parameters()}, {'params':self.DProb.parameters()}]
+      return optim.Adam(g_parameters, lr=g_lr, betas=(self.config.beta1, self.config.beta2)), \
+             optim.Adam(d_parameters, lr=d_lr, betas=(self.config.beta1, self.config.beta2)),
     
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
@@ -84,6 +90,7 @@ class IInfoGAN(utils.BaseModel):
 
     self.D.train()
     self.Q.train()
+    self.DProb.train()
     for epoch in range(self.config.num_epoch):
       self.G.train()
       t1.reset()
@@ -96,28 +103,42 @@ class IInfoGAN(utils.BaseModel):
 
         # Update discriminator.
         d_optim.zero_grad()
-        _, d_real = self.D(image)
+        code, d_real = self.D(image)
+        prob_real = self.DProb(code)
+        labels.fill_(real_label)
+
+        d_probloss_real = BCELoss(prob_real, labels)
         d_loss_real = AeLoss(d_real, image)
+        (d_probloss_real + d_loss_real).backward()
 
+        # fake part
         fake_image = self.G(noise)
-        latent, d_fake = self.D(fake_image.detach())
+        code, d_fake = self.D(fake_image.detach())
+        prob_fake = self.DProb(code)
+        labels.fill_(fake_label)
+
+        d_probloss_fake = BCELoss(prob_fake, labels)
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
+        (d_probloss_fake + d_loss_fake).backward()
 
-        # q_c = self.Q(latent)
-        # q_loss_D = QLoss(c, q_c)
-
-        d_loss = d_loss_real - k_t * d_loss_fake #+ q_loss_D
+        d_began_loss = d_loss_real - k_t * d_loss_fake
+        d_infogan_loss = d_probloss_real + d_probloss_fake
+        d_loss = d_began_loss*0.3 + d_infogan_loss*0.7
         self.log['d_loss'].append(d_loss.cpu().detach().item())
-        d_loss.backward()
+        # d_loss.backward()
         d_optim.step()
 
         # Update generator.
         g_optim.zero_grad()
-        latent, d_fake = self.D(fake_image)
-        q_c = self.Q(latent)
-        q_loss_G = QLoss(c, q_c)
+        code, d_fake = self.D(fake_image)
+        prob_fake = self.DProb(code)
+        labels.fill_(real_label)
+        reconstruct_loss = BCELoss(prob_fake, labels)
+
+        q_c = self.Q(code)
+        q_loss = MSELoss(c, q_c)
         loss_g = AeLoss(d_fake, fake_image)
-        g_loss = loss_g + q_loss_G
+        g_loss = (reconstruct_loss + q_loss)*0.7 + loss_g*0.3
 
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
@@ -191,12 +212,13 @@ class IInfoGAN(utils.BaseModel):
     hidden_dim = self.config.hidden_dim
     self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim, repeat_num)
     self.D = nets.DiscriminatorCNN(channel, channel, hidden_dim, repeat_num)
+    self.DProb = nets.DProb()
     self.Q = nets.Qhead(latent_dim, self.c_dim)
-    for i in [self.G, self.D, self.Q]:
+    for i in [self.G, self.D, self.DProb, self.Q]:
       i.apply(utils.weights_init)
       i.to(self.device)
       utils.print_network(i)
-    return self.G, self.D, self.Q
+    return self.G, self.D, self.DProb, self.Q
 
   def generate_noise(self, z, c):
     'Generate samples for G\'s input.'
