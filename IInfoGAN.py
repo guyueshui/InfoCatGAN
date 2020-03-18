@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 
 import utils
 import models.mnist as nets
-from config import get_config
 
 class IInfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -43,7 +42,7 @@ class IInfoGAN(utils.BaseModel):
     generated_images = []
     
     bs = self.config.batch_size
-    dv = self.config.device
+    dv = self.device
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     c = torch.FloatTensor(bs, self.c_dim).to(dv)
@@ -195,7 +194,7 @@ class IInfoGAN(utils.BaseModel):
     self.Q = nets.Qhead(latent_dim, self.c_dim)
     for i in [self.G, self.D, self.Q]:
       i.apply(utils.weights_init)
-      i.to(self.config.device)
+      i.to(self.device)
       utils.print_network(i)
     return self.G, self.D, self.Q
 
@@ -265,34 +264,3 @@ class IInfoGAN(utils.BaseModel):
     plt.tight_layout()
     plt.savefig(path + '/measure.png')
     plt.close('all')
-
-
-def main(config):
-  if config.dataset == 'CelebA':
-    import models.celeba as nets
-    dataset = utils.get_data('CelebA', config.data_root)
-    print("This is celeba dataset, " \
-          "{} images will be used in training.".format(len(dataset)))
-  elif config.dataset == 'MNIST':
-    import models.mnist as nets
-    dataset = utils.get_data('MNIST', config.data_root)
-  else:
-    raise NotImplementedError
-
-  if config.gpu == 0:  # GPU selection.
-    config.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-  elif config.gpu == 1:
-    config.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-  elif config.gpu == -1:
-    config.device = torch.device('cpu')
-  else:
-    raise IndexError('Invalid GPU index')
-
-  t = IInfoGAN(config, dataset)
-  t.train()
-
-
-if __name__ == '__main__':
-  args = get_config()
-  print(args)
-  main(args)

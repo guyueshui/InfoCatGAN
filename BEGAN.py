@@ -15,32 +15,18 @@ import matplotlib.pyplot as plt
 import models.celeba as nets
 from torch.utils.data import DataLoader
 
-from utils import get_data, weights_init, ETimer, generate_animation, plot_loss, print_network
-from config import get_config
+import utils
 
-class Trainer(object):
+class BEGAN(utils.BaseModel):
   def __init__(self, config, dataset):
-    self.config = config
-    self.dataset = dataset
+    super(BEGAN, self).__init__(config, dataset)
+    self.batch_size = config.batch_size
+    self.num_noise_dim = config.num_noise_dim
 
-    self.batch_size = self.config.batch_size
-    self.num_noise_dim = self.config.num_noise_dim
-    self.lr = self.config.lr
-    self.lr_update_step = self.config.lr_update_step
-    self.max_step = self.config.max_step
-    self.gamma = self.config.gamma
-    self.lambda_k = self.config.lambda_k
+    self.lr = config.lr
+    self.gamma = config.gamma
+    self.lambda_k = config.lambda_k
 
-    save_dir = os.path.join(os.getcwd(), 'results', 
-                            config.dataset, config.experiment_tag)
-    if not os.path.exists(save_dir):
-      os.makedirs(save_dir)
-    self.save_dir = save_dir
-    # Write experiment settings to file.
-    with open(os.path.join(save_dir, 'config.txt'), 'w') as f:
-      f.write(str(config.__dict__))
-      # json.dump(config.__dict__, f, indent=4, sort_keys=True)
-    
     self.build_model()
 
   def train(self):
@@ -57,7 +43,7 @@ class Trainer(object):
     generated_images = []
     
     bs = self.batch_size
-    dv = self.config.device
+    dv = self.device
     AeLoss = nn.L1Loss().to(dv)
 
     z = torch.FloatTensor(bs, self.num_noise_dim).to(dv)
@@ -80,8 +66,8 @@ class Trainer(object):
                   self.config.batch_size, len(dataloader)))
     print('-'*25)
 
-    t0 = ETimer() # train timer
-    t1 = ETimer() # epoch timer
+    t0 = utils.ETimer() # train timer
+    t1 = utils.ETimer() # epoch timer
     k_t = 0
     self.log['k_t'].append(k_t)
 
@@ -98,11 +84,11 @@ class Trainer(object):
 
         # Update discriminator.
         d_optim.zero_grad()
-        d_real = self.D(image)
+        _, d_real = self.D(image)
         d_loss_real = AeLoss(d_real, image)
 
         fake_image = self.G(z)
-        d_fake = self.D(fake_image.detach())
+        _, d_fake = self.D(fake_image.detach())
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
 
         d_loss = d_loss_real - k_t * d_loss_fake
@@ -112,7 +98,7 @@ class Trainer(object):
 
         # Update generator.
         g_optim.zero_grad()
-        d_fake = self.D(fake_image)
+        _, d_fake = self.D(fake_image)
         g_loss = AeLoss(d_fake, fake_image)
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
@@ -159,30 +145,32 @@ class Trainer(object):
     print('-'*50)
     print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
     print('-'*50)
-    generate_animation(self.save_dir, generated_images)
-    plot_loss(self.log, self.save_dir)    
+    utils.generate_animation(self.save_dir, generated_images)
+    utils.plot_loss(self.log, self.save_dir)    
     self.plot_param(self.log, self.save_dir)
 
   
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    repeat_num = int(np.log2(height)) - 2
-    self.G = nets.GeneratorCNN([self.batch_size, self.num_noise_dim], 
-                               [3, 64, 64],
-                               self.config.hidden_dim,
-                               repeat_num
-                               )
-    self.D = nets.DiscriminatorCNN([3, 64, 64],
-                                   [3, 64, 64],
-                                   self.config.hidden_dim,
-                                   repeat_num
-                                   )
+    latent_dim = 0  # latent space vector dim
+    if self.config.dataset == 'CelebA':
+      repeat_num = int(np.log2(height)) - 2
+      latent_dim = 64
+    elif self.config.dataset == 'MNIST':
+      repeat_num = int(np.log2(height)) - 1
+      latent_dim = 32
+    else:
+      raise NotImplementedError
+    noise_dim = self.num_noise_dim
+    hidden_dim = self.config.hidden_dim
+    self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim, repeat_num)
+    self.D = nets.DiscriminatorCNN(channel, channel, hidden_dim, repeat_num)
     for i in [self.G, self.D]:
-      i.apply(weights_init)
-      i.to(self.config.device)
-    print_network(self.G)
-    print_network(self.D)
+      i.apply(utils.weights_init)
+      i.to(self.device)
+      utils.print_network(i)
+    return self.G, self.D
   
   def generate(self, noise, path, idx=None):
     self.G.eval()
@@ -199,11 +187,11 @@ class Trainer(object):
 
   def autoencode(self, inputs, path, idx=None, fake_inputs=None):
     img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
-    img = self.D(inputs)
+    _, img = self.D(inputs)
     vutils.save_image(img, img_path)
     if fake_inputs is not None:
       fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
-      fake_img = self.D(fake_inputs)
+      _, fake_img = self.D(fake_inputs)
       vutils.save_image(fake_img, fake_img_path)
   
   def plot_param(self, log: dict, path: str):
@@ -229,28 +217,3 @@ class Trainer(object):
     plt.tight_layout()
     plt.savefig(path + '/measure.png')
     plt.close('all')
-
-
-def main(config):
-  assert config.dataset == 'CelebA', "CelebA support only."
-  dataset = get_data('CelebA', config.data_root)
-  print("This is celeba dataset, " \
-        "{} images will be used in training.".format(len(dataset)))
-
-  if config.gpu == 0:  # GPU selection.
-    config.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-  elif config.gpu == 1:
-    config.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-  elif config.gpu == -1:
-    config.device = torch.device('cpu')
-  else:
-    raise IndexError('Invalid GPU index')
-
-  t = Trainer(config, dataset)
-  t.train()
-
-
-if __name__ == '__main__':
-  args = get_config()
-  print(args)
-  main(args)

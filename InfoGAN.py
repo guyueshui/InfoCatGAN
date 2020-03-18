@@ -14,7 +14,6 @@ from torch.utils.data import DataLoader
 
 import utils
 import models.mnist as nets
-from config import get_config
 
 class InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -277,27 +276,3 @@ class InfoGAN(utils.BaseModel):
     plt.tight_layout()
     plt.savefig(path + '/measure.png')
     plt.close('all')
-
-
-def main(config):
-  if config.dataset == 'MNIST':
-    dataset = utils.get_data('MNIST', config.data_root)
-  else:
-    raise NotImplementedError
-
-  if config.gpu == 0:  # GPU selection.
-    config.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-  elif config.gpu == 1:
-    config.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-  elif config.gpu == -1:
-    config.device = torch.device('cpu')
-  else:
-    raise IndexError('Invalid GPU index')
-
-  t = InfoGAN(config, dataset)
-  t.train()
-    
-if __name__ == '__main__':
-  args = get_config()
-  print(args)
-  main(args)

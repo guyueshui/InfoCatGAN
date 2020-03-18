@@ -8,6 +8,7 @@ import time as t
 import imageio
 import math
 import os
+import json
 
 from torchvision.datasets import VisionDataset
 
@@ -347,15 +348,26 @@ class BaseModel(object):
   def __init__(self, config, dataset):
     self.config = config
     self.dataset = dataset
+
+    if config.gpu == 0:  # GPU selection.
+      self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    elif config.gpu == 1:
+      self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    elif config.gpu == -1:
+      self.device = torch.device('cpu')
+    else:
+      raise IndexError('Invalid GPU index')
+
     save_dir = os.path.join(os.getcwd(), 'results', 
                             config.dataset, config.experiment_tag)
     if not os.path.exists(save_dir):
       os.makedirs(save_dir)
     self.save_dir = save_dir
     # Write experiment settings to file.
-    with open(os.path.join(save_dir, 'config.txt'), 'w') as f:
-      for k, v in config.__dict__.items():
-        f.write('{:>15s} : {:<}\n'.format(str(k), str(v)))
+    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+      # for k, v in config.__dict__.items():
+      #   f.write('{:>15s} : {:<}\n'.format(str(k), str(v)))
+      json.dump(config.__dict__, f, indent=4, sort_keys=True)      
   
   def save_model(self, path, idx=None, *models):
     dic = {}
