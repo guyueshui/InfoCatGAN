@@ -45,6 +45,7 @@ class IInfoGAN(utils.BaseModel):
     dv = self.device
     real_label = 1
     fake_label = 0
+    alpha = 0.999999 # prefer BEGAN
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     c = torch.FloatTensor(bs, self.c_dim).to(dv)
@@ -109,8 +110,8 @@ class IInfoGAN(utils.BaseModel):
 
         d_probloss_real = BCELoss(prob_real, labels)
         d_loss_real = AeLoss(d_real, image)
-        d_loss_real.backward(torch.tensor(0.3), retain_graph=True)
-        d_probloss_real.backward(torch.tensor(0.7))
+        d_loss_real.backward(torch.tensor(alpha), retain_graph=True)
+        d_probloss_real.backward(torch.tensor(1-alpha))
 
         # fake part
         fake_image = self.G(noise)
@@ -120,8 +121,8 @@ class IInfoGAN(utils.BaseModel):
 
         d_probloss_fake = BCELoss(prob_fake, labels)
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
-        d_loss_fake.backward(torch.tensor(0.3), retain_graph=True)
-        d_probloss_fake.backward(torch.tensor(0.7))
+        d_loss_fake.backward(torch.tensor(alpha), retain_graph=True)
+        d_probloss_fake.backward(torch.tensor(1-alpha))
 
         d_began_loss = d_loss_real - k_t * d_loss_fake
         d_infogan_loss = d_probloss_real + d_probloss_fake
@@ -140,7 +141,7 @@ class IInfoGAN(utils.BaseModel):
         q_c = self.Q(code)
         q_loss = MSELoss(c, q_c)
         loss_g = AeLoss(d_fake, fake_image)
-        g_loss = (reconstruct_loss + q_loss)*0.7 + loss_g*0.3
+        g_loss = (reconstruct_loss + q_loss)*(1-alpha) + loss_g*alpha
 
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
@@ -158,7 +159,7 @@ class IInfoGAN(utils.BaseModel):
 
         # Print progress...
         if (num_iter+1) % 100 == 0:
-          print('Epoch: ({:3.0f}/{:3.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
+          print('Epoch: ({:2.0f}/{:2.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
           .format(epoch+1, self.config.num_epoch, num_iter+1, len(dataloader), 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
