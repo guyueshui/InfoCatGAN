@@ -247,8 +247,8 @@ class GeneratorCNN(nn.Module):
       nn.ConvTranspose2d(128, 64, 4, 2, 1), # bs x 64 x 14 x 14
       nn.BatchNorm2d(64),
       nn.ReLU(),
-      nn.ConvTranspose2d(64, self.out_dim, 4, 2, 1), # bs x output_dim x 28 x 28
-      nn.Tanh()
+      nn.ConvTranspose2d(64, out_dim, 4, 2, 1), # bs x output_dim x 28 x 28
+      nn.Sigmoid(),
     )
     # torch.Size([bs, 1, 28, 28])
   
@@ -259,15 +259,35 @@ class GeneratorCNN(nn.Module):
 
 
 class DiscriminatorCNN(nn.Module):
+  # Architecture from: https://github.com/hwalsuklee/tensorflow-generative-model-collections/blob/master/BEGAN.py
   def __init__(self, in_dim, out_dim, hidden_dim, repeat_num):
     super(DiscriminatorCNN, self).__init__()
-    self.latent_dim = 32
-    self.enc = Encoder(in_dim, self.latent_dim, hidden_dim, repeat_num)
-    self.dec = Decoder(self.latent_dim, out_dim, hidden_dim, repeat_num)
+    self.down_shape = [64, 14, 14]
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4, 2, 1),
+      nn.ReLU(),
+    )
+    self.fc1 = nn.Sequential(
+      nn.Linear(np.prod(self.down_shape), 32),
+      nn.BatchNorm1d(32),
+      nn.ReLU(),
+    )
+    self.fc2 = nn.Sequential(
+      nn.Linear(32, np.prod(self.down_shape)),
+      nn.BatchNorm1d(np.prod(self.down_shape)),
+      nn.ReLU(),
+    )
+    self.deconv = nn.Sequential(
+      nn.ConvTranspose2d(64, out_dim, 4, 2, 1),
+      nn.Sigmoid(),
+    )
+
 
   def forward(self, x):
-    latent = self.enc(x)
-    x = self.dec(latent)
+    x = self.conv(x).view(-1, np.prod(self.down_shape))
+    latent = self.fc1(x)  # bs x 32
+    x = self.fc2(latent).view([-1] + self.down_shape)
+    x = self.deconv(x)
     return latent, x
 
 
