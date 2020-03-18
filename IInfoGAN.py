@@ -109,7 +109,8 @@ class IInfoGAN(utils.BaseModel):
 
         d_probloss_real = BCELoss(prob_real, labels)
         d_loss_real = AeLoss(d_real, image)
-        (d_probloss_real + d_loss_real).backward()
+        d_loss_real.backward(torch.tensor(0.3), retain_graph=True)
+        d_probloss_real.backward(torch.tensor(0.7))
 
         # fake part
         fake_image = self.G(noise)
@@ -119,11 +120,12 @@ class IInfoGAN(utils.BaseModel):
 
         d_probloss_fake = BCELoss(prob_fake, labels)
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
-        (d_probloss_fake + d_loss_fake).backward()
+        d_loss_fake.backward(torch.tensor(0.3), retain_graph=True)
+        d_probloss_fake.backward(torch.tensor(0.7))
 
         d_began_loss = d_loss_real - k_t * d_loss_fake
         d_infogan_loss = d_probloss_real + d_probloss_fake
-        d_loss = d_began_loss*0.3 + d_infogan_loss*0.7
+        d_loss = d_began_loss + d_infogan_loss
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         # d_loss.backward()
         d_optim.step()

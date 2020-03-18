@@ -26,7 +26,7 @@ parser.add_argument('--num_con_c', type=int, default=2, help='Number of continou
 parser.add_argument('-f', help='For ipython debug.')
 parser.add_argument('--instance_noise', type=str2bool, default=False, help='Whether to use instance noise trick.')
 
-parser.add_argument('--lr', type=float, default=0.0002)
+parser.add_argument('--lr', type=float, default=0.0001)
 parser.add_argument('--beta1', type=float, default=0.5)
 parser.add_argument('--beta2', type=float, default=0.999)
 parser.add_argument('--gamma', type=float, default=0.5)
