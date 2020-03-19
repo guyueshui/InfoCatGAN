@@ -26,7 +26,7 @@ class InfoGAN(utils.BaseModel):
     self.gamma = config.gamma
     self.lambda_k = config.lambda_k
 
-    self.build_model()
+    self.models = self.build_model()
 
   def train(self):
     self.log = {}
@@ -42,7 +42,7 @@ class InfoGAN(utils.BaseModel):
     generated_images = []
     
     bs = self.config.batch_size
-    dv = self.config.device
+    dv = self.device
     real_label = 1
     fake_label = 0
 
@@ -55,9 +55,9 @@ class InfoGAN(utils.BaseModel):
     fixed_noise_1 = np.hstack([fixz, cdis, c1])
     fixed_noise_2 = np.hstack([fixz, cdis, c2])
     # NOTE: dtype should exactly match the network weight's type!
-    noise_fixed = torch.as_tensor(noise_fixed, dtype=torch.float32).view(100, -1).to(dv)
-    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).view(100, -1).to(dv)
-    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).view(100, -1).to(dv)
+    noise_fixed = torch.as_tensor(noise_fixed, dtype=torch.float32).to(dv)
+    fixed_noise_1 = torch.as_tensor(fixed_noise_1, dtype=torch.float32).to(dv)
+    fixed_noise_2 = torch.as_tensor(fixed_noise_2, dtype=torch.float32).to(dv)
 
     DLoss = nn.BCELoss().to(dv)
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
@@ -72,7 +72,7 @@ class InfoGAN(utils.BaseModel):
       
     g_optim, d_optim = _get_optimizer(self.lr)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
-    real_fixed_image = next(iter(dataloader))[0].to(dv)
+    # real_fixed_image = next(iter(dataloader))[0].to(dv)
 
     # Training...
     print('-'*25)
@@ -84,8 +84,8 @@ class InfoGAN(utils.BaseModel):
 
     t0 = utils.ETimer() # train timer
     t1 = utils.ETimer() # epoch timer
-    k_t = 0
-    self.log['k_t'].append(k_t)
+    # k_t = 0
+    # self.log['k_t'].append(k_t)
 
     self.FD.train()
     self.D.train()
@@ -113,7 +113,6 @@ class InfoGAN(utils.BaseModel):
         d_loss_fake = DLoss(d_fake, labels) 
         d_loss_fake.backward()
 
-        # d_loss = d_loss_real - k_t * d_loss_fake
         d_loss = d_loss_real + d_loss_fake
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_optim.step()
@@ -172,6 +171,7 @@ class InfoGAN(utils.BaseModel):
     training_time = t0.elapsed()
     print('-'*50)
     print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
+    self.save_model(self.save_dir, self.config.num_epoch, self.models)
     print('-'*50)
 
     # Manipulating continuous latent codes.
@@ -186,16 +186,16 @@ class InfoGAN(utils.BaseModel):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
     # repeat_num = int(np.log2(height)) - 1
-    hidden_dim = self.config.hidden_dim
+    # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
-    self.G = nets.GeneratorCNN(noise_dim, channel, hidden_dim)
+    self.G = nets.GeneratorCNN(noise_dim, channel, 0,0)
     self.FD = nets.Dbody(channel, latent_dim)
-    self.D = nets.Dhead(latent_dim, channel)
-    self.Q = nets.Qhead(latent_dim, self.cat_dim, self.num_cont_code)
+    self.D = nets.DProbHead(latent_dim, channel)
+    self.Q = nets.QHead(latent_dim, self.cat_dim, self.num_cont_code)
     for i in [self.G, self.FD, self.D, self.Q]:
       i.apply(utils.weights_init)
-      i.to(self.config.device)
+      i.to(self.device)
       utils.print_network(i)
 
   def generate_noise(self, z, disc_c, cont_c, prob=None):

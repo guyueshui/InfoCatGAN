@@ -267,6 +267,7 @@ class DiscriminatorCNN(nn.Module):
       nn.Conv2d(in_dim, 64, 4, 2, 1),
       nn.LeakyReLU(0.2),
       nn.Conv2d(64, 128, 4, 2, 1),
+      nn.BatchNorm2d(128),
       nn.LeakyReLU(0.2),
     )
     self.fc1 = nn.Sequential(
@@ -294,32 +295,21 @@ class DiscriminatorCNN(nn.Module):
     return latent, x
 
 
-class Qhead(nn.Module):
-  def __init__(self, in_dim, out_dim):
-    super(Qhead, self).__init__()
-    self.fc = nn.Sequential(
-      nn.Linear(1024, 128),
-      nn.BatchNorm1d(128),
-      nn.LeakyReLU(0.2),
-      nn.Linear(128, out_dim),
-      nn.Tanh(),
-    )
-  
-  def forward(self, x):
-    x = self.fc(x)
-    return x 
+# class Qhead(nn.Module):
+#   def __init__(self, in_dim, out_dim):
+#     super(Qhead, self).__init__()
+#     self.fc = nn.Sequential(
+#       nn.Linear(1024, 128),
+#       nn.BatchNorm1d(128),
+#       nn.LeakyReLU(0.2),
+#       nn.Linear(128, out_dim),
+#       nn.Tanh(),
+#     )
+#   
+#   def forward(self, x):
+#     x = self.fc(x)
+#     return x 
 
-class DProb(nn.Module):
-  def __init__(self, in_dim=1024, out_dim=1):
-    super(DProb, self).__init__()
-    self.fc = nn.Sequential(
-      nn.Linear(in_dim, out_dim),
-      nn.Sigmoid(),
-    )
-  
-  def forward(self, x):
-    x = self.fc(x)
-    return x 
 
 #================ below are not began structure ===========
 
@@ -349,62 +339,59 @@ class DProb(nn.Module):
 #     x = self.deconv(x)
 #     return x
 # 
-# class Dbody(nn.Module):
-#   def __init__(self, in_dim, out_dim):
-#     super(Dbody, self).__init__()
-#     # Encoder
-#     self.conv = nn.Sequential(
-#       nn.Conv2d(in_dim, 64, 4, 2, 1),
-#       nn.LeakyReLU(0.2),
-#       nn.Conv2d(64, 128, 4, 2, 1),
-#       nn.BatchNorm2d(128),
-#       nn.LeakyReLU(0.2),
-#     )
-# 
-#     self.fc = nn.Sequential(
-#       nn.Linear(128*7*7, out_dim),
-#       nn.BatchNorm1d(out_dim),
-#       nn.LeakyReLU(0.2),
-#     )
-#     
-#   def forward(self, x):
-#     x = self.conv(x).view(-1, 128*7*7)
-#     x = self.fc(x)
-#     return x
-# 
-# class Dhead(nn.Module):
-#   def __init__(self, in_dim, out_dim):
-#     super(Dhead, self).__init__()
-#     self.main = nn.Sequential(
-#       nn.Linear(in_dim, 1),
-#       nn.Sigmoid(),
-#     )
-#     
-#   def forward(self, x):
-#     x = self.main(x)
-#     return x
-# 
-# class Qhead(nn.Module):
-#   def __init__(self, in_dim, cat_dim=10, num_cont_code=2):
-#     super(Qhead, self).__init__()
-# 
-#     self.fc = nn.Sequential(
-#       nn.Linear(in_dim, 128),
-#       nn.BatchNorm1d(128),
-#       nn.LeakyReLU(0.2),
-#       # nn.Linear(128, self.dis_dim + self.con_dim)
-#     )
-# 
-#     self.disc = nn.Linear(128, cat_dim)
-#     self.mu = nn.Sequential(
-#       nn.Linear(128, num_cont_code),
-#     #  nn.Tanh(),
-#     )
-#     self.var = nn.Linear(128, num_cont_code)
-# 
-#   def forward(self, x):
-#     x = self.fc(x)
-#     disc_logits = self.disc(x)
-#     mu = self.mu(x)
-#     var = self.var(x).exp() # use exp to ensure positivity
-#     return disc_logits, mu, var
+class Dbody(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(Dbody, self).__init__()
+    # Encoder
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4, 2, 1),
+      nn.LeakyReLU(0.2),
+      nn.Conv2d(64, 128, 4, 2, 1),
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.2),
+    )
+
+    self.fc = nn.Sequential(
+      nn.Linear(128*7*7, out_dim),
+      nn.BatchNorm1d(out_dim),
+      nn.LeakyReLU(0.2),
+    )
+    
+  def forward(self, x):
+    x = self.conv(x).view(-1, 128*7*7)
+    x = self.fc(x)
+    return x
+
+class DProbHead(nn.Module):
+  def __init__(self, in_dim, out_dim=1):
+    super(DProbHead, self).__init__()
+    self.main = nn.Sequential(
+      nn.Linear(in_dim, out_dim),
+      nn.Sigmoid(),
+    )
+    
+  def forward(self, x):
+    x = self.main(x)
+    return x
+
+class QHead(nn.Module):
+  def __init__(self, in_dim, cat_dim=10, num_cont_code=2):
+    super(QHead, self).__init__()
+
+    self.fc = nn.Sequential(
+      nn.Linear(in_dim, 128),
+      nn.BatchNorm1d(128),
+      nn.LeakyReLU(0.2),
+      # nn.Linear(128, self.dis_dim + self.con_dim)
+    )
+
+    self.disc = nn.Linear(128, cat_dim)
+    self.mu = nn.Linear(128, num_cont_code)
+    self.var = nn.Linear(128, num_cont_code)
+
+  def forward(self, x):
+    x = self.fc(x)
+    disc_logits = self.disc(x)
+    mu = self.mu(x)
+    var = self.var(x).exp() # use exp to ensure positivity
+    return disc_logits, mu, var

@@ -18,7 +18,7 @@ def main(config):
   else:
     raise NotImplementedError
 
-  gan = IInfoGAN(config, dataset)
+  gan = InfoGAN(config, dataset)
   gan.train()
 
 
