@@ -45,7 +45,7 @@ class IInfoGAN(utils.BaseModel):
     dv = self.device
     real_label = 1
     fake_label = 0
-    alpha = 0.999999 # prefer BEGAN
+    alpha = 1.0 # prefer BEGAN
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     c = torch.FloatTensor(bs, self.c_dim).to(dv)
@@ -110,8 +110,8 @@ class IInfoGAN(utils.BaseModel):
 
         d_probloss_real = BCELoss(prob_real, labels)
         d_loss_real = AeLoss(d_real, image)
-        d_loss_real.backward(torch.tensor(alpha), retain_graph=True)
-        d_probloss_real.backward(torch.tensor(1-alpha))
+        real_part = d_loss_real * alpha + d_probloss_real * (1-alpha)
+        real_part.backward()
 
         # fake part
         fake_image = self.G(noise)
@@ -121,12 +121,10 @@ class IInfoGAN(utils.BaseModel):
 
         d_probloss_fake = BCELoss(prob_fake, labels)
         d_loss_fake = AeLoss(d_fake, fake_image.detach())
-        d_loss_fake.backward(torch.tensor(alpha), retain_graph=True)
-        d_probloss_fake.backward(torch.tensor(1-alpha))
+        fake_part = d_loss_fake * (-k_t*alpha) + d_probloss_fake * (1-alpha)
+        fake_part.backward()
 
-        d_began_loss = d_loss_real - k_t * d_loss_fake
-        d_infogan_loss = d_probloss_real + d_probloss_fake
-        d_loss = d_began_loss + d_infogan_loss
+        d_loss = real_part + fake_part
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         # d_loss.backward()
         d_optim.step()
