@@ -98,7 +98,6 @@ class InfoGAN(utils.BaseModel):
           break
         
         image = image.to(dv)
-        noise, idx = self.generate_noise(z, disc_c, cont_c)
 
         # Update discriminator.
         d_optim.zero_grad()
@@ -107,6 +106,7 @@ class InfoGAN(utils.BaseModel):
         d_loss_real = DLoss(d_real, labels)
         d_loss_real.backward()
 
+        noise, idx = self.generate_noise(z, disc_c, cont_c)
         fake_image = self.G(noise)
         d_fake = self.D(self.FD(fake_image.detach()))
         labels.fill_(fake_label)
@@ -193,10 +193,12 @@ class InfoGAN(utils.BaseModel):
     self.FD = nets.Dbody(channel, latent_dim)
     self.D = nets.DProbHead(latent_dim, channel)
     self.Q = nets.QHead(latent_dim, self.cat_dim, self.num_cont_code)
-    for i in [self.G, self.FD, self.D, self.Q]:
+    networks = [self.G, self.FD, self.D, self.Q]
+    for i in networks:
       i.apply(utils.weights_init)
       i.to(self.device)
       utils.print_network(i)
+    return networks
 
   def generate_noise(self, z, disc_c, cont_c, prob=None):
     'Generate samples for G\'s input.'
