@@ -169,13 +169,14 @@ class SS_InfoGAN(utils.BaseModel):
         q_logits, q_mu, q_var = self.Q(dbody_out)
         targets = torch.LongTensor(idx).to(dv)
         if is_labeled_batch:
-          dis_loss = celoss(q_logits, targets) * 1.0
+          dis_loss = celoss(q_logits, targets) * 1.2
         else:
-          dis_loss = celoss(q_logits, targets) * 0.8
-        con_loss = gaussian(cont_c, q_mu, q_var) * 0.2
+          dis_loss = celoss(q_logits, targets) * 1.0
+        con_loss = gaussian(cont_c, q_mu, q_var) * 0.1
 
         g_loss = reconstruct_loss + dis_loss + con_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
+        g_loss.backward()
         g_optim.step()
 
         # Print progress...

@@ -6,6 +6,7 @@ from config import get_config
 import utils
 
 import torch
+import numpy as np
 
 def main(config):
   if config.dataset == 'CelebA':
@@ -34,6 +35,6 @@ if __name__ == '__main__':
   args = get_config()
   print(args)
   # Fix random seeds.
-  np.random.seed(config.seed)
-  torch.manual_seed(config.seed)
+  np.random.seed(args.seed)
+  torch.manual_seed(args.seed)
   main(args)
