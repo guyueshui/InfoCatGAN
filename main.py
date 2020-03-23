@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 plt.style.use('ggplot')
 
 from trainer import Trainer
+from config import get_config
 from utils import weights_init, get_data, ImbalanceSampler
 
 def main(config):
@@ -19,6 +20,9 @@ def main(config):
     import models.stl10 as nets
     config.num_noise_dim == 256
     config.num_dis_c = 10
+  
+  elif config.dataset == "CIFAR10":
+    import models.cifar10 as nets
 
   elif config.dataset == 'CIFAR10':
     import models.cifar10 as nets
@@ -86,26 +90,26 @@ def main(config):
   plt.savefig(t._savepath + '/gan_loss.png')
   plt.close('all')
 
-  plt.figure(figsize=(10, 5))
-  plt.title('Entropy Loss')
-  plt.plot(EntQC_given_X, linewidth=1)
-  plt.xlabel('Iterations')
-  plt.ylabel('Loss')
-  plt.savefig(t._savepath + '/ent_loss.png')
-  plt.close('all')
+  # plt.figure(figsize=(10, 5))
+  # plt.title('Entropy Loss')
+  # plt.plot(EntQC_given_X, linewidth=1)
+  # plt.xlabel('Iterations')
+  # plt.ylabel('Loss')
+  # plt.savefig(t._savepath + '/ent_loss.png')
+  # plt.close('all')
 
-  if config.use_ba:
-    plt.figure(figsize=(10, 5))
-    plt.title('RMSE')
-    plt.plot(MSEs, linewidth=1)
-    plt.savefig(t._savepath + '/rmse.png')
-    plt.close('all')
+  # if config.use_ba:
+  #   plt.figure(figsize=(10, 5))
+  #   plt.title('RMSE')
+  #   plt.plot(MSEs, linewidth=1)
+  #   plt.savefig(t._savepath + '/rmse.png')
+  #   plt.close('all')
 
 if __name__ == '__main__':
   ##############################
   # Pre configs.
   ##############################
-  from config import config
+  config = get_config()
   np.set_printoptions(precision=4)
 
   # Fix random seeds.

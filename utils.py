@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 import time as t
 import imageio
 import math
+import os
+import json
 
-from config import config
 from torchvision.datasets import VisionDataset
 
 class Noiser:
@@ -127,6 +128,7 @@ class BlahutArimoto:
 
     return f, post_dist
 
+
 class ImbalanceSampler:
   'Make an imbalanced dataset by deleting something.'
 
@@ -153,13 +155,13 @@ class LogGaussian:
   Custom loss for Q network.
   """
   def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
-    logli = -0.5 * (var.mul(2*np.pi) + config.tiny).log() - \
-            (x-mu).pow(2).div(var.mul(2.0) + config.tiny)
+    logli = -0.5 * (var.mul(2*np.pi) + 1e-6).log() - \
+            (x-mu).pow(2).div(var.mul(2.0) + 1e-6)
     return logli.sum(1).mean().mul(-1)
 
 
 class ETimer:
-  'A easy to use timer.'
+  'A easy-to-use timer.'
 
   def __init__(self):
     self._start = t.time()
@@ -217,12 +219,13 @@ def get_data(dbname: str, data_root: str):
     
   elif dbname == 'CelebA':
     transform = transforms.Compose([
-      transforms.Resize(32),
-      transforms.CenterCrop(32),
+      transforms.Resize(70),
+      transforms.CenterCrop(64),
       transforms.ToTensor(),
     ])
 
-    dataset = dsets.CelebA(data_root, transform=transform, download=True)
+    # dataset = dsets.CelebA(data_root, transform=transform, download=False)
+    dataset = dsets.ImageFolder(data_root, transform=transform)
 
   elif dbname == 'STL10':
     transform = transforms.Compose([
@@ -268,6 +271,8 @@ class CustomDataset:
         break
     mask = np.zeros(len(dset), dtype=bool)
     mask[idx_to_draw] = True
+    _, cnts = np.unique(targets_to_draw, return_counts=True)
+    self.labeled_dist = cnts / np.sum(cnts)
 
     self.labeled_data = copy.deepcopy(dset)
     self.labeled_data.data = dset.data[mask]
@@ -289,6 +294,7 @@ class CustomDataset:
     print('Origin dataset has {} samples'.format(self.num_data))
     print('Now splitted into {} labeled/ {} unlabeled'
           .format(len(self.labeled_data), len(self.unlabeled_data)))
+    print('The labeled dist is: ', self.labeled_dist)
     print('-'*25)
     
 
@@ -300,10 +306,11 @@ def MarginalEntropy(y):
   return y2
 
 def Entropy(y):
+  bs = y.size(0)
   y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
   y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
   y1 = -y * torch.log(y + 1e-6)
-  y2 = 1.0 / config.batch_size * y1.sum()
+  y2 = 1.0 / bs * y1.sum()
   return y2
 
 def DrawDistribution(dataset, title='Distribution of dataset'):
@@ -314,3 +321,58 @@ def DrawDistribution(dataset, title='Distribution of dataset'):
   ax.set_xticks(label)
   ax.set_title(title)
   fig.show()
+
+def plot_loss(log: dict, path: str):
+  plt.style.use('ggplot')
+
+  # loss
+  # plt.figure(figsize=(10, 5))
+  plt.title('GAN Loss')
+  plt.plot(log['g_loss'], label='G', linewidth=1)
+  plt.plot(log['d_loss'], label='D', linewidth=1)
+  plt.xlabel('Iterations')
+  plt.ylabel('Loss')
+  plt.legend(loc='upper right')
+  plt.tight_layout()
+  plt.savefig(path + '/gan_loss.png')
+  plt.close('all')
+  
+def print_network(net):
+  num_params = 0
+  for param in net.parameters():
+    num_params += param.numel()
+  print(net)
+  print("Total number of parameters: %d." % num_params)
+
+class BaseModel(object):
+  def __init__(self, config, dataset):
+    self.config = config
+    self.dataset = dataset
+
+    if config.gpu == 0:  # GPU selection.
+      self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    elif config.gpu == 1:
+      self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    elif config.gpu == -1:
+      self.device = torch.device('cpu')
+    else:
+      raise IndexError('Invalid GPU index')
+
+    save_dir = os.path.join(os.getcwd(), 'results', 
+                            config.dataset, config.experiment_tag)
+    if not os.path.exists(save_dir):
+      os.makedirs(save_dir)
+    self.save_dir = save_dir
+    # Write experiment settings to file.
+    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+      # for k, v in config.__dict__.items():
+      #   f.write('{:>15s} : {:<}\n'.format(str(k), str(v)))
+      json.dump(config.__dict__, f, indent=4, sort_keys=True)      
+  
+  def save_model(self, path, idx=None, *models):
+    dic = {}
+    for m in models:
+      dic[m.__class__.__name__] = m.state_dict()
+    fname = os.path.join(path, 'model-epoch-{}.pt'.format(idx))
+    torch.save(dic, fname)
+    print("-- model saved as ", fname)

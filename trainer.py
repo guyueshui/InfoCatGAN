@@ -1,11 +1,15 @@
 import os
+import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import torchvision.utils as vutils
 
 from torch.utils.data import DataLoader
 from utils import BlahutArimoto, Noiser, LogGaussian, ETimer, generate_animation, CustomDataset
+
+torch.set_default_tensor_type(torch.FloatTensor)
 
 class Trainer:
   def __init__(self, config, dataset, G, FD, D, Q):
@@ -27,7 +31,7 @@ class Trainer:
     
     self._savepath = savepath
     # Write experiment settings to file.
-    with open(os.path.join(savepath, 'config.txt'), 'w') as f:
+    with open(os.path.join(savepath, 'config.json'), 'w') as f:
       f.write(str(config.__dict__))
 
 
@@ -111,11 +115,11 @@ class Trainer:
     criterionQ_dis = nn.CrossEntropyLoss().to(self.config.device)
     criterionQ_con = LogGaussian()
     # criterionQ_con = nn.MSELoss().to(self.config.device)
-    criterionQsemi = nn.CrossEntropyLoss().to(self.config.device)
+    # criterionQsemi = nn.CrossEntropyLoss().to(self.config.device)
 
     optimD = optim.Adam([{'params': self.FD.parameters()}, {'params': self.D.parameters()}], lr=0.0002, betas=(0.5, 0.99))
     optimG = optim.Adam([{'params': self.FG.parameters()}, {'params': self.G.parameters()}, {'params': self.Q.parameters()}], lr=0.001, betas=(0.5, 0.99))
-    optimQsemi = optim.Adam(self.Qsemi.parameters(), lr=0.001, betas=(0.5, 0.99))
+    # optimQsemi = optim.Adam(self.Qsemi.parameters(), lr=0.001, betas=(0.5, 0.99))
 
     dataloader = DataLoader(self.dataset, batch_size=self.config.batch_size, shuffle=False, num_workers=1)
     tot_iters = len(dataloader)
@@ -176,15 +180,15 @@ class Trainer:
         loss_real = criterionD(probs_real, labels)
         loss_real.backward()
 
-        # Add Qss loss for real images.
-        is_labeled_batch = (torch.bernoulli(torch.tensor(unlabeled_sampling_prob)) == 0)
-        if is_labeled_batch:
-          num_labeled_batch += 1
-          disc_logits_real = self.Qsemi(dbody_out_real.detach())
-          qsemi_loss_real = criterionQ_dis(disc_logits_real, y.to(self.config.device)) * 2
-          qsemi_loss_real.backward()
-          optimQsemi.step()
-          ## TODO: write Qsemi logics.
+        # # Add Qss loss for real images.
+        # is_labeled_batch = (torch.bernoulli(torch.tensor(unlabeled_sampling_prob)) == 0)
+        # if is_labeled_batch:
+        #   num_labeled_batch += 1
+        #   disc_logits_real = self.Qsemi(dbody_out_real.detach())
+        #   qsemi_loss_real = criterionQ_dis(disc_logits_real, y.to(self.config.device)) * 2
+        #   qsemi_loss_real.backward()
+        #   optimQsemi.step()
+        #   ## TODO: write Qsemi logics.
 
         ## fake part
         noise, idx = self._sample(z, dis_c, con_c, cat_prob, bs)
@@ -230,15 +234,15 @@ class Trainer:
         dis_loss = criterionQ_dis(q_logits, targets) * 0.8
         con_loss = criterionQ_con(con_c, q_mu, q_var) * 0.2 # weight
 
-        # Add Qss loss.
-        if is_labeled_batch:
-          disc_logits_fake = self.Qsemi(dbody_out) 
-          qsemi_loss_fake = criterionQsemi(disc_logits_fake, targets) * 2
-        else:
-          qsemi_loss_fake = 0.0
+        # # Add Qss loss.
+        # if is_labeled_batch:
+        #   disc_logits_fake = self.Qsemi(dbody_out) 
+        #   qsemi_loss_fake = criterionQsemi(disc_logits_fake, targets) * 2
+        # else:
+        #   qsemi_loss_fake = 0.0
 
         ## update parameters
-        G_loss = reconstruct_loss + dis_loss + con_loss + qsemi_loss_fake
+        G_loss = reconstruct_loss + dis_loss + con_loss # + qsemi_loss_fake
         G_loss.backward()
         optimG.step()
         
