@@ -6,20 +6,25 @@ import matplotlib.pyplot as plt
 plt.style.use('ggplot')
 
 from trainer import Trainer
+from config import get_config
 from utils import weights_init, get_data, ImbalanceSampler
 
 def main(config):
   if config.dataset == 'MNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'FashionMNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'STL10':
     import models.stl10 as nets
     config.num_noise_dim == 256
     config.num_dis_c = 10
-
+  
   elif config.dataset == 'CIFAR10':
     import models.cifar10 as nets
     config.num_noise_dim = 128
@@ -73,7 +78,8 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, g, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(config.cat_prob)
+  cat_prob = np.array([0.1]).repeat(10)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(cat_prob)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))
@@ -86,26 +92,26 @@ def main(config):
   plt.savefig(t._savepath + '/gan_loss.png')
   plt.close('all')
 
-  plt.figure(figsize=(10, 5))
-  plt.title('Entropy Loss')
-  plt.plot(EntQC_given_X, linewidth=1)
-  plt.xlabel('Iterations')
-  plt.ylabel('Loss')
-  plt.savefig(t._savepath + '/ent_loss.png')
-  plt.close('all')
+  # plt.figure(figsize=(10, 5))
+  # plt.title('Entropy Loss')
+  # plt.plot(EntQC_given_X, linewidth=1)
+  # plt.xlabel('Iterations')
+  # plt.ylabel('Loss')
+  # plt.savefig(t._savepath + '/ent_loss.png')
+  # plt.close('all')
 
-  if config.use_ba:
-    plt.figure(figsize=(10, 5))
-    plt.title('RMSE')
-    plt.plot(MSEs, linewidth=1)
-    plt.savefig(t._savepath + '/rmse.png')
-    plt.close('all')
+  # if config.use_ba:
+  #   plt.figure(figsize=(10, 5))
+  #   plt.title('RMSE')
+  #   plt.plot(MSEs, linewidth=1)
+  #   plt.savefig(t._savepath + '/rmse.png')
+  #   plt.close('all')
 
 if __name__ == '__main__':
   ##############################
   # Pre configs.
   ##############################
-  from config import config
+  config = get_config()
   np.set_printoptions(precision=4)
 
   # Fix random seeds.
