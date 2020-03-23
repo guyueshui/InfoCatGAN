@@ -376,3 +376,23 @@ class BaseModel(object):
     fname = os.path.join(path, 'model-epoch-{}.pt'.format(idx))
     torch.save(dic, fname)
     print("-- model saved as ", fname)
+
+  def load_model(self, fname, *models):
+    params = torch.load(fname)
+    for m in models:
+      m.load_state_dict(params[m.__class__.__name__])
+    print("-- load model from ", fname)
+
+  def generate(self, generator, noise, fname, nrow=10):
+    "Generate fake images."
+    generator.eval()
+    img_path = os.path.join(self.save_dir, fname)
+    from PIL import Image
+    from torchvision.utils import make_grid
+    tensor = generator(noise)
+    grid = make_grid(tensor, nrow, padding=2)
+    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+    ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+    im = Image.fromarray(ndarr)
+    im.save(img_path)
+    return ndarr

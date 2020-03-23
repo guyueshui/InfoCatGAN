@@ -9,8 +9,8 @@ def str2bool(v):
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_epoch', type=int, default=70)
 parser.add_argument('--num_class', type=int, default=10, help='Number of different categories.')
-parser.add_argument('--num_noise_dim', type=int, default=128, help='Uncompressed noise dimension (i.e., dim of z) of the generator input.')
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--num_noise_dim', type=int, default=62, help='Uncompressed noise dimension (i.e., dim of z) of the generator input.')
+parser.add_argument('--batch_size', type=int, default=100)
 parser.add_argument('--tiny', type=float, default=1e-6, help='Global precison.')
 parser.add_argument('--dataset', type=str, default='MNIST', help='[MNIST | FashionMNIST | CelebA], The dataset to train.')
 parser.add_argument('--data_root', type=str, default='../datasets')
@@ -25,6 +25,7 @@ parser.add_argument('--num_dis_c', type=int, default=1, help='Number of categori
 parser.add_argument('--num_con_c', type=int, default=2, help='Number of continous latent codes.')
 parser.add_argument('-f', help='For ipython debug.')
 parser.add_argument('--instance_noise', type=str2bool, default=False, help='Whether to use instance noise trick.')
+parser.add_argument('--gan_type', type=str, help='[infogan | ssinfogan | began], implemented gan models.')
 
 parser.add_argument('--lr', type=float, default=0.0001)
 parser.add_argument('--beta1', type=float, default=0.5)

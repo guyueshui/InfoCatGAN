@@ -12,18 +12,19 @@ from utils import weights_init, get_data, ImbalanceSampler
 def main(config):
   if config.dataset == 'MNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'FashionMNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'STL10':
     import models.stl10 as nets
     config.num_noise_dim == 256
     config.num_dis_c = 10
   
-  elif config.dataset == "CIFAR10":
-    import models.cifar10 as nets
-
   elif config.dataset == 'CIFAR10':
     import models.cifar10 as nets
     config.num_noise_dim = 128
@@ -77,7 +78,8 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, g, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(config.cat_prob)
+  cat_prob = np.array([0.1]).repeat(10)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.ss_train(cat_prob)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))

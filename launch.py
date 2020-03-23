@@ -1,6 +1,7 @@
 from IInfoGAN import IInfoGAN
 from InfoGAN import InfoGAN
 from BEGAN import BEGAN
+from SS_InfoGAN import SS_InfoGAN
 from config import get_config
 import utils
 
@@ -16,13 +17,23 @@ def main(config):
     import models.mnist as nets
     dataset = utils.get_data('MNIST', config.data_root)
   else:
-    raise NotImplementedError
+    raise NotImplementedError('unsupport dataset')
 
-  gan = InfoGAN(config, dataset)
+  if config.gan_type == "ssinfogan":
+    gan = SS_InfoGAN(config, dataset)
+  elif config.gan_type == "infogan":
+    gan = InfoGAN(config, dataset)
+  elif config.gan_type == "BEGAN":
+    gan = BEGAN(config, dataset)
+  else:
+    raise NotImplementedError('unsupport gan type')
   gan.train()
 
 
 if __name__ == '__main__':
   args = get_config()
   print(args)
+  # Fix random seeds.
+  np.random.seed(config.seed)
+  torch.manual_seed(config.seed)
   main(args)
