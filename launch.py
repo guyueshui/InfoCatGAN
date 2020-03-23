@@ -23,7 +23,7 @@ def main(config):
     gan = SS_InfoGAN(config, dataset)
   elif config.gan_type == "infogan":
     gan = InfoGAN(config, dataset)
-  elif config.gan_type == "BEGAN":
+  elif config.gan_type == "began":
     gan = BEGAN(config, dataset)
   else:
     raise NotImplementedError('unsupport gan type')
