@@ -8,8 +8,8 @@ from SS_InfoGAN import SS_InfoGAN
 
 args = get_config()
 path = 'results/' + args.dataset
-path += 'experiment_tag'
-path += 'model-epoch-70.pt'
+path += '/re-ssinfogan'
+path += '/model-epoch-70.pt'
 
 if args.dataset == "MNIST":
   dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())
@@ -19,12 +19,12 @@ else:
   raise NotImplementedError
 
 gan = SS_InfoGAN(args, dataset)
-gan.load_model(path, gan.models)
+gan.load_model(path, *gan.models)
 
 def Classify(imgs):
   with torch.no_grad():
     logits, _, _ = gan.Q( gan.FD(imgs) )
-    logits = logits.numpy()
+    logits = logits.cpu().numpy()
   predicted = np.argmax(logits, axis=1)
   return predicted
 
@@ -37,6 +37,7 @@ if __name__ == '__main__':
 
   num_correct = 0
   for num_iter, (images, labels) in enumerate(loader):
+    images = images.to(gan.device)
     predicted = Classify(images)
     with torch.no_grad():
       labels = labels.numpy()
