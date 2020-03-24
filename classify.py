@@ -1,7 +1,6 @@
 import torch
-import torchvision.datasets as dsets
-import torchvision.transforms as transforms
 import numpy as np
+
 from utils import get_data
 from config import get_config
 from SS_InfoGAN import SS_InfoGAN
@@ -11,15 +10,9 @@ path = 'results/' + args.dataset
 path += '/re-ssinfogan'
 path += '/model-epoch-70.pt'
 
-if args.dataset == "MNIST":
-  dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())
-elif args.dataset == "CIFAR10":
-  dataset = dsets.CIFAR10('../datasets', train=False, transform=transforms.ToTensor())
-else:
-  raise NotImplementedError
-
+dataset = get_data(args.dataset, args.data_root, train=False)
 gan = SS_InfoGAN(args, dataset)
-gan.load_model(path, *gan.models)
+gan.load_model(path, gan.FD, gan.Q)
 
 def Classify(imgs):
   with torch.no_grad():

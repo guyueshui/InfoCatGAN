@@ -185,7 +185,7 @@ def weights_init(m):
     m.bias.data.fill_(0)
 
 
-def get_data(dbname: str, data_root: str):
+def get_data(dbname: str, data_root: str, train=True):
   'Get training dataset.'
 
   if dbname == 'MNIST':
@@ -195,7 +195,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor()
     ])
 
-    dataset = dsets.MNIST(data_root, train=True, download=True, transform=transform)
+    dataset = dsets.MNIST(data_root, train=train, download=True, transform=transform)
 
   elif dbname == 'FashionMNIST':
     transform = transforms.Compose([
@@ -204,7 +204,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor()
     ])
 
-    dataset = dsets.FashionMNIST(data_root, train=True, transform=transform, 
+    dataset = dsets.FashionMNIST(data_root, train=train, transform=transform, 
                                  download=True)
 
   elif dbname == "CIFAR10":
@@ -214,7 +214,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
     
-    dataset = dsets.CIFAR10(data_root, train=True, transform=transform, 
+    dataset = dsets.CIFAR10(data_root, train=train, transform=transform, 
                             download=True)
     
   elif dbname == 'CelebA':
@@ -234,7 +234,8 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
 
-    dataset = dsets.STL10(data_root, transform=transform)
+    split = 'train' if train else 'test'
+    dataset = dsets.STL10(data_root, split=split, transform=transform)
   
   else:
     raise NotImplementedError
