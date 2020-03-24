@@ -257,22 +257,23 @@ class CustomDataset:
     # Make a uniform labeled subset.
     num_classes = len(dset.class_to_idx)
     num_data_per_class = self.num_labeled_data // num_classes
-    targets_to_draw = np.arange(num_classes).repeat(num_data_per_class).tolist()
-    while len(targets_to_draw) < self.num_labeled_data:
-      targets_to_draw.append(np.random.randint(num_classes))
+
+    # Construct counter...
+    counter = [0 for i in range(num_classes)]
+    for i in range(num_classes):
+      counter[i] = num_data_per_class
+    while sum(counter) < self.num_labeled_data:
+      counter[np.random.randint(num_classes)] += 1
+    assert sum(counter) == self.num_labeled_data, "cannot meets the labeled condition"
+
+    self.labeled_dist = counter / np.sum(counter)
     idx_to_draw = []
-    start = 0
     for i, label in enumerate(dset.targets):
-      if start < len(targets_to_draw):
-        if label == targets_to_draw[start]:
-          idx_to_draw.append(i)
-          start += 1
-      else:
-        break
+      if counter[label] > 0:
+        idx_to_draw.append(i)
+        counter[label] -= 1
     mask = np.zeros(len(dset), dtype=bool)
     mask[idx_to_draw] = True
-    _, cnts = np.unique(targets_to_draw, return_counts=True)
-    self.labeled_dist = cnts / np.sum(cnts)
 
     self.labeled_data = copy.deepcopy(dset)
     self.labeled_data.data = dset.data[mask]

@@ -30,7 +30,7 @@ class SS_InfoGAN(utils.BaseModel):
 
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 0.2
+    supervised_ratio = 0.0022
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim*self.num_disc_code).to(dv)
