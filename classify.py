@@ -1,32 +1,29 @@
-import argparse
 import torch
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
 import numpy as np
 from utils import get_data
+from config import get_config
+from SS_InfoGAN import SS_InfoGAN
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default="MNIST")
-args = parser.parse_args()
+args = get_config()
+path = 'results/' + args.dataset
+path += 'experiment_tag'
+path += 'model-epoch-70.pt'
 
-params = torch.load('results/' + args.dataset + '/0.2super/checkpoint/model-epoch-100.pt')
 if args.dataset == "MNIST":
-  from models.official_mnist import FrontD, Q
   dataset = dsets.MNIST('../datasets', train=False, transform=transforms.ToTensor())
 elif args.dataset == "CIFAR10":
-  from models.cifar10 import FrontD, Q
   dataset = dsets.CIFAR10('../datasets', train=False, transform=transforms.ToTensor())
 else:
   raise NotImplementedError
 
-fd = FrontD()
-q = Q()
-fd.load_state_dict(params['FrontD'])
-q.load_state_dict(params['Q'])
+gan = SS_InfoGAN(args, dataset)
+gan.load_model(path, gan.models)
 
 def Classify(imgs):
   with torch.no_grad():
-    logits, _, _ = q(fd(imgs))
+    logits, _, _ = gan.Q( gan.FD(imgs) )
     logits = logits.numpy()
   predicted = np.argmax(logits, axis=1)
   return predicted

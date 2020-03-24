@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
-import models.mnist as nets
 
 class SS_InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -203,7 +202,7 @@ class SS_InfoGAN(utils.BaseModel):
     training_time = t0.elapsed()
     print('-'*50)
     print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
-    self.save_model(self.save_dir, self.config.num_epoch, self.models)
+    self.save_model(self.save_dir, self.config.num_epoch, *self.models)
     print('-'*50)
 
     # Manipulating continuous latent codes.
