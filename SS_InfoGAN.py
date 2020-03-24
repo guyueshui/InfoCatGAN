@@ -141,7 +141,17 @@ class SS_InfoGAN(utils.BaseModel):
           qsuper_loss_real.backward()
           q_optim.step()
 
-        noise, idx = self._sample(z, disc_c, cont_c)
+        if is_labeled_batch:
+          idx = y.cpu().numpy()
+          z.normal_(0, 1)
+          onehot = torch.zeros_like(disc_c)
+          onehot[range(bs), idx] = 1
+          disc_c.copy_(onehot)
+          cont_c.uniform_(-1, 1)
+          noise = torch.cat([z, disc_c, cont_c], dim=1).view(bs, -1)
+        else:
+          noise, idx = self._sample(z, disc_c, cont_c)
+
         fake_image = self.G(noise)
         ## Add instance noise if specified.
         if self.config.instance_noise:
