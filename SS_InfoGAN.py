@@ -94,11 +94,12 @@ class SS_InfoGAN(utils.BaseModel):
       else:
         tot_iters = len(unlabeled_loader) + len(labeled_loader)
       
+      # Add FID score...
+      imgs_cur_epoch = []
+
       self.FD.train()
       self.D.train()
       for num_iter in range(tot_iters):
-        # Add FID score...
-        imgs_cur_epoch = []
 
         self.G.train()
         self.Q.train()
@@ -197,10 +198,10 @@ class SS_InfoGAN(utils.BaseModel):
         g_optim.step()
 
         # Add FID score...
-        if tot_iters == len(self.dataset):
+        if tot_iters > 200:
           with torch.no_grad():
             img_tensor = self.G(noise)
-            img_list = [img_tensor[i] for i in img_tensor.size(0)]
+            img_list = [i for i in img_tensor]
             imgs_cur_epoch.extend(img_list)
 
         # Print progress...
@@ -211,14 +212,15 @@ class SS_InfoGAN(utils.BaseModel):
           )
       
       # Add FID score...
-      fake_list = []
-      real_list = []
-      for i in range(len(imgs_cur_epoch)):
-        fake_list.append(dup2rgb(imgs_cur_epoch[i]))
-        real_list.append(dup2rgb(self.dataset[i]))
-      fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 50, True, 2048)
-      self.log['fid'].append(fid_value)
-      print("-- FID score %.4f" % fid_value)
+      if len(imgs_cur_epoch) > 0:
+        fake_list = []
+        real_list = []
+        for i in range(len(imgs_cur_epoch)):
+          fake_list.append(dup2rgb(imgs_cur_epoch[i]))
+          real_list.append(dup2rgb(self.dataset[i]))
+        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 50, True, 2048)
+        self.log['fid'].append(fid_value)
+        print("-- FID score %.4f" % fid_value)
 
       # Report epoch training time.
       epoch_time = t1.elapsed()
@@ -246,6 +248,7 @@ class SS_InfoGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    self.plot()
 
   def build_model(self):
     import models.official_mnist as nets
