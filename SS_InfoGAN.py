@@ -11,6 +11,9 @@ from torch.utils.data import DataLoader
 
 import utils
 
+def dup2rgb(singe_channel_img):
+  return torch.cat([singe_channel_img]*3)
+
 class SS_InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
     super(SS_InfoGAN, self).__init__(config, dataset)
@@ -92,6 +95,9 @@ class SS_InfoGAN(utils.BaseModel):
       self.FD.train()
       self.D.train()
       for num_iter in range(tot_iters):
+        # Add FID score...
+        imgs_cur_epoch = []
+
         self.G.train()
         self.Q.train()
         # Train discriminator.
@@ -188,12 +194,29 @@ class SS_InfoGAN(utils.BaseModel):
         g_loss.backward()
         g_optim.step()
 
+        # Add FID score...
+        if tot_iters == len(self.dataset):
+          with torch.no_grad():
+            img_tensor = self.G(noise)
+            img_list = [img_tensor[i] for i in img_tensor.size(0)]
+            imgs_cur_epoch.extend(img_list)
+
         # Print progress...
         if (num_iter+1) % 50 == 0:
           print('Epoch: ({:2.0f}/{:2.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
           .format(epoch+1, self.config.num_epoch, num_iter+1, tot_iters, 
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
+      
+      # Add FID score...
+      fake_list = []
+      real_list = []
+      for i in range(len(imgs_cur_epoch)):
+        fake_list.append(dup2rgb(imgs_cur_epoch[i]))
+        real_list.append(dup2rgb(self.dataset[i]))
+      from fid import fid_score
+      fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 50, True, 2048)
+      print("-- FID score %.4f" % fid_value)
 
       # Report epoch training time.
       epoch_time = t1.elapsed()
