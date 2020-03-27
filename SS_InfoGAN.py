@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
+from fid import fid_score
 
 def dup2rgb(singe_channel_img):
   return torch.cat([singe_channel_img]*3)
@@ -28,6 +29,7 @@ class SS_InfoGAN(utils.BaseModel):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
+    self.log['fid'] = []
     generated_images = []
 
     bs = self.config.batch_size
@@ -214,8 +216,8 @@ class SS_InfoGAN(utils.BaseModel):
       for i in range(len(imgs_cur_epoch)):
         fake_list.append(dup2rgb(imgs_cur_epoch[i]))
         real_list.append(dup2rgb(self.dataset[i]))
-      from fid import fid_score
       fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 50, True, 2048)
+      self.log['fid'].append(fid_value)
       print("-- FID score %.4f" % fid_value)
 
       # Report epoch training time.
@@ -293,4 +295,14 @@ class SS_InfoGAN(utils.BaseModel):
     one_hot[range(100), idx] = 1
     
     return fixz.numpy(), one_hot, c1, c2, c3
+
+  def plot(self):
+    plt.title('FID score')
+    plt.plot(log['fid'], linewidth=1)
+    plt.xlabel('Epochs')
+    plt.ylabel('FID')
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.savefig(path + '/fid.png')
+    plt.close('all')
         
