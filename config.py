@@ -25,7 +25,7 @@ parser.add_argument('--num_dis_c', type=int, default=1, help='Number of categori
 parser.add_argument('--num_con_c', type=int, default=2, help='Number of continous latent codes.')
 parser.add_argument('-f', help='For ipython debug.')
 parser.add_argument('--instance_noise', action='store_true', help='Whether to use instance noise trick.')
-parser.add_argument('--gan_type', type=str, help='[infogan | ssinfogan | began], implemented gan models.')
+parser.add_argument('--gan_type', type=str, help='[infogan | ssinfogan | began | catgan], implemented gan models.')
 parser.add_argument('--fid', action='store_true', help='Whether to compute FID score.')
 
 parser.add_argument('--lr', type=float, default=0.0001)
