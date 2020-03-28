@@ -12,8 +12,9 @@ from torch.utils.data import DataLoader
 import utils
 from fid import fid_score
 
-def dup2rgb(singe_channel_img):
-  return torch.cat([singe_channel_img]*3)
+def dup2rgb(single_channel_img):
+  ret = torch.cat([single_channel_img]*3)
+  return ret
 
 class SS_InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -203,6 +204,8 @@ class SS_InfoGAN(utils.BaseModel):
             img_tensor = self.G(noise)
             img_list = [i for i in img_tensor]
             imgs_cur_epoch.extend(img_list)
+            # print("imgs_cur_epoch.len ", len(imgs_cur_epoch))
+            # print(imgs_cur_epoch[0].size())
 
         # Print progress...
         if (num_iter+1) % 50 == 0:
@@ -215,10 +218,10 @@ class SS_InfoGAN(utils.BaseModel):
       if len(imgs_cur_epoch) > 0:
         fake_list = []
         real_list = []
-        for i in range(len(imgs_cur_epoch)):
+        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
           fake_list.append(dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(dup2rgb(self.dataset[i]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 50, True, 2048)
+          real_list.append(dup2rgb(self.dataset[i][0]))
+        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
@@ -301,11 +304,11 @@ class SS_InfoGAN(utils.BaseModel):
 
   def plot(self):
     plt.title('FID score')
-    plt.plot(log['fid'], linewidth=1)
+    plt.plot(self.log['fid'], linewidth=1)
     plt.xlabel('Epochs')
     plt.ylabel('FID')
     plt.legend(loc='upper right')
     plt.tight_layout()
-    plt.savefig(path + '/fid.png')
+    plt.savefig(self.save_dir + '/fid.png')
     plt.close('all')
         

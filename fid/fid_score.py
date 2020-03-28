@@ -158,7 +158,7 @@ def get_activations_fork(all_image, model, batch_size=50, dims=2048,
         # images = images.transpose((0, 3, 1, 2))
         # images /= 255
 
-        batch = torch.from_numpy(images).type(torch.FloatTensor)
+        batch = torch.stack(images).type(torch.FloatTensor)
         if cuda:
             batch = batch.cuda()
 
