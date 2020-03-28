@@ -12,10 +12,6 @@ from torch.utils.data import DataLoader
 import utils
 from fid import fid_score
 
-def dup2rgb(single_channel_img):
-  ret = torch.cat([single_channel_img]*3)
-  return ret
-
 class SS_InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
     super(SS_InfoGAN, self).__init__(config, dataset)
@@ -96,7 +92,8 @@ class SS_InfoGAN(utils.BaseModel):
         tot_iters = len(unlabeled_loader) + len(labeled_loader)
       
       # Add FID score...
-      imgs_cur_epoch = []
+      if self.config.fid:
+        imgs_cur_epoch = []
 
       self.FD.train()
       self.D.train()
@@ -199,7 +196,7 @@ class SS_InfoGAN(utils.BaseModel):
         g_optim.step()
 
         # Add FID score...
-        if tot_iters > 200:
+        if self.config.fid and tot_iters > 200:
           with torch.no_grad():
             img_tensor = self.G(noise)
             img_list = [i for i in img_tensor]
@@ -215,12 +212,12 @@ class SS_InfoGAN(utils.BaseModel):
           )
       
       # Add FID score...
-      if len(imgs_cur_epoch) > 0:
+      if self.config.fid and len(imgs_cur_epoch) > 0:
         fake_list = []
         real_list = []
         for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(dup2rgb(self.dataset[i][0]))
+          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
+          real_list.append(utils.dup2rgb(self.dataset[i][0]))
         fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
@@ -251,7 +248,10 @@ class SS_InfoGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
-    self.plot()
+
+    # Add FID score...
+    if self.config.fid:
+      self.plot_fid()
 
   def build_model(self):
     import models.official_mnist as nets
@@ -302,7 +302,7 @@ class SS_InfoGAN(utils.BaseModel):
     
     return fixz.numpy(), one_hot, c1, c2, c3
 
-  def plot(self):
+  def plot_fid(self):
     plt.title('FID score')
     plt.plot(self.log['fid'], linewidth=1)
     plt.xlabel('Epochs')

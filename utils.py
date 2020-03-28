@@ -398,3 +398,8 @@ class BaseModel(object):
     im = Image.fromarray(ndarr)
     im.save(img_path)
     return ndarr
+
+def dup2rgb(single_channel_img):
+  'Convert a black-white image to RGB image by duplicate channel 3 times.'
+  ret = torch.cat([single_channel_img]*3)
+  return ret
