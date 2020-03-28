@@ -109,9 +109,9 @@ class FrontG(nn.Module):
     output = self.main(input)
     return output
 
-class Generator(nn.Module):
+class GHead(nn.Module):
   def __init__(self):
-    super(Generator, self).__init__()
+    super(GHead, self).__init__()
 
     # torch.Size([bs, 64, 14, 14])
     self.main = nn.Sequential(
@@ -162,4 +162,64 @@ class Discriminator(nn.Module):
   def forward(self, input):
     x = self.main(input).squeeze()
     x = self.softmax(x)
+    return x
+
+
+class Generator(nn.Module):
+  'G = FrontG + Generator'
+  def __init__(self, in_dim=74, out_dim=1):
+    super(Generator, self).__init__()
+
+    # bs x input_dim
+    self.fc = nn.Sequential(
+      nn.Linear(in_dim, 1024),  # bs x 1024
+      nn.BatchNorm1d(1024),
+      nn.ReLU(),
+      nn.Linear(1024, 128 * 7 * 7), # bs x 128*7*7
+      nn.BatchNorm1d(128 * 7 * 7),
+      nn.ReLU()
+    )
+
+    # torch.Size([bs, 128, 7, 7])
+    self.deconv = nn.Sequential(
+      nn.ConvTranspose2d(128, 64, 4, 2, 1), # bs x 64 x 14 x 14
+      nn.BatchNorm2d(64),
+      nn.ReLU(),
+      nn.ConvTranspose2d(64, out_dim, 4, 2, 1), # bs x output_dim x 28 x 28
+      nn.Tanh()
+    )
+    # torch.Size([bs, 1, 28, 28])
+
+  def forward(self, x):
+    x = self.fc(x).view(-1, 128, 7, 7)
+    x = self.deconv(x)
+    return x
+
+
+class CatD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(CatD, self).__init__()
+
+    # in_dim x 28 x 28
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4, 2, 1),  # 64 x 14 x 14
+      nn.LeakyReLU(0.2),
+      nn.Conv2d(64, 128, 4, 2, 1),  # 128 x 7 x 7
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.2)
+    )
+
+    self.fc = nn.Sequential(
+      nn.Linear(128*7*7, 1024),
+      nn.BatchNorm1d(1024),
+      nn.LeakyReLU(0.2),
+      nn.Linear(1024, out_dim),
+    )
+
+    self.softmax = nn.Softmax(dim=1) # Each row sums to 1.
+
+  def forward(self, x):
+    x = self.conv(x).view(-1, 128*7*7)
+    x = self.fc(x)
+    x = self.softmax(x)  
     return x
