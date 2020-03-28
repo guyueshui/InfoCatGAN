@@ -66,11 +66,11 @@ class Q(nn.Module):
 
 class G(nn.Module):
 
-  def __init__(self):
+  def __init__(self, in_dim, out_dim):
     super(G, self).__init__()
-
+    self.in_dim = in_dim
     self.main = nn.Sequential(
-      nn.ConvTranspose2d(74, 1024, 1, 1, bias=False),
+      nn.ConvTranspose2d(in_dim, 1024, 1, 1, bias=False),
       nn.BatchNorm2d(1024),
       nn.ReLU(True),
       nn.ConvTranspose2d(1024, 128, 7, 1, bias=False),
@@ -79,11 +79,12 @@ class G(nn.Module):
       nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
       nn.BatchNorm2d(64),
       nn.ReLU(True),
-      nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False),
+      nn.ConvTranspose2d(64, out_dim, kernel_size=4, stride=2, padding=1, bias=False),
       nn.Sigmoid()
     )
 
   def forward(self, x):
+    x = x.view(-1, self.in_dim, 1, 1)
     output = self.main(x)
     return output
 
@@ -141,11 +142,11 @@ class GTransProb(nn.Module):
     return output
 
 class Discriminator(nn.Module):
-  def __init__(self):
+  def __init__(self, in_dim, out_dim):
     super(Discriminator, self).__init__()
 
     self.main = nn.Sequential(
-      nn.Conv2d(1, 64, 4, 2, 1),
+      nn.Conv2d(in_dim, 64, 4, 2, 1),
       nn.LeakyReLU(0.1, inplace=True),
       nn.Conv2d(64, 128, 4, 2, 1, bias=False),
       nn.BatchNorm2d(128),
@@ -153,10 +154,12 @@ class Discriminator(nn.Module):
       nn.Conv2d(128, 1024, 7, bias=False),
       nn.BatchNorm2d(1024),
       nn.LeakyReLU(0.1, inplace=True),
-      nn.Conv2d(1024, 1, 1),
-      nn.Sigmoid()
+      nn.Conv2d(1024, out_dim, 1),
     )
+
+    self.softmax = nn.Softmax(dim=1)  # Each row sums to 1.
   
   def forward(self, input):
-    output = self.main(input).view(-1, 1)
-    return output
+    x = self.main(input).squeeze()
+    x = self.softmax(x)
+    return x
