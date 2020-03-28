@@ -152,6 +152,9 @@ class CatGAN(utils.BaseModel):
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
 
+    # Add FID score...
+    if self.config.fid:
+      self.plot_fid()
     
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
@@ -164,3 +167,13 @@ class CatGAN(utils.BaseModel):
       i.apply(utils.weights_init)
       i.to(self.device)
     return networks
+
+  def plot_fid(self):
+    plt.title('FID score')
+    plt.plot(self.log['fid'], linewidth=1)
+    plt.xlabel('Epochs')
+    plt.ylabel('FID')
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.savefig(self.save_dir + '/fid.png')
+    plt.close('all')
