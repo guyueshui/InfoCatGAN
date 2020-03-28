@@ -28,6 +28,8 @@ class CatGAN(utils.BaseModel):
 
     bs = self.config.batch_size
     dv = self.device
+    one = torch.FloatTensor([1]).to(dv)
+    mone = one * -1
     
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}]
@@ -78,8 +80,10 @@ class CatGAN(utils.BaseModel):
         d_real_simplex = self.D(image)
         # Minimize entropy to make certain prediction of real sample.
         ent_real = utils.Entropy(d_real_simplex)
+        ent_real.backward(one, retain_graph=True)
         # Maximize marginal entropy over real samples to ensure equal usage.
         margin_ent_real = utils.MarginalEntropy(d_real_simplex)
+        margin_ent_real.backward(mone)
 
         noise = torch.randn(bs, self.z_dim).to(dv)
         fake_image = self.G(noise)
@@ -92,10 +96,10 @@ class CatGAN(utils.BaseModel):
         d_fake_simplex = self.D(fake_image.detach())
         # Maximize entropy to make uncertain prediction of fake sample.
         ent_fake = utils.Entropy(d_fake_simplex)
+        ent_fake.backward(mone)
 
-        d_loss = ent_real - margin_ent_real - ent_fake
+        d_loss = ent_real + margin_ent_real + ent_fake
         self.log['d_loss'].append(d_loss.cpu().detach().item())
-        d_loss.backward()
         d_optim.step()
 
         # Train generator.
@@ -103,12 +107,13 @@ class CatGAN(utils.BaseModel):
         d_fake_simplex = self.D(fake_image)
         # Fool D to make it believe the fake is real.
         ent_fake = utils.Entropy(d_fake_simplex)
+        ent_fake.backward(one, retain_graph=True)
         # Ensure equal usage of fake samples.
         margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
+        margin_ent_fake.backward(mone)
 
-        g_loss = ent_fake - margin_ent_fake
+        g_loss = ent_fake + margin_ent_fake
         self.log['g_loss'].append(g_loss.cpu().detach().item())
-        g_loss.backward()
         g_optim.step()
 
         # Add FID score...
