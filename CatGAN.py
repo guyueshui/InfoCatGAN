@@ -51,7 +51,7 @@ class CatGAN(utils.BaseModel):
 
     t0 = utils.ETimer() # train timer
     t1 = utils.ETimer() # epoch timer
-    noise_fixed = torch.randn(100, self.z_dim)
+    noise_fixed = torch.randn(100, self.z_dim).to(dv)
 
     self.D.train()
     for epoch in range(self.config.num_epoch):
@@ -144,7 +144,7 @@ class CatGAN(utils.BaseModel):
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
 
       if (epoch+1) % 1 == 0:
-        img = self.generate(self.G, noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
+        img = self.saveimg(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
 
     # Training finished.
@@ -182,3 +182,17 @@ class CatGAN(utils.BaseModel):
     plt.tight_layout()
     plt.savefig(self.save_dir + '/fid.png')
     plt.close('all')
+
+  def saveimg(self, noise, fname):
+    'Generate fake images using generator.'
+    self.G.eval()
+    img_path = os.path.join(self.save_dir, fname)
+    from PIL import Image
+    from torchvision.utils import make_grid
+    tensor = self.G(noise)
+    grid = make_grid(tensor, nrow=10, padding=2)
+    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+    ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+    im = Image.fromarray(ndarr)
+    im.save(img_path)
+    return ndarr
