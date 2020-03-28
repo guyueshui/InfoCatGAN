@@ -104,6 +104,15 @@ class CatGAN(utils.BaseModel):
 
         # Train generator.
         g_optim.zero_grad()
+
+        noise = torch.randn(bs, self.z_dim).to(dv)
+        fake_image = self.G(noise)
+
+        ## Add instance noise if specified.
+        if self.config.instance_noise:
+          # instance_noise.normal_(0, std)  # Regenerate instance noise!
+          fake_image = fake_image + instance_noise
+
         d_fake_simplex = self.D(fake_image)
         # Fool D to make it believe the fake is real.
         ent_fake = utils.Entropy(d_fake_simplex)
@@ -119,7 +128,8 @@ class CatGAN(utils.BaseModel):
         # Add FID score...
         if self.config.fid:
           with torch.no_grad():
-            img_list = [i for i in fake_image]
+            img_tensor = self.G(noise)
+            img_list = [i for i in img_tensor]
             imgs_cur_epoch.extend(img_list)
 
         if (num_iter+1) % 100 == 0:
