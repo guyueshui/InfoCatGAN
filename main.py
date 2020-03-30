@@ -73,7 +73,8 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, g, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(config.cat_prob)
+  cat_prob = np.array([0.1]).repeat(10)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(cat_prob)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))
@@ -96,18 +97,13 @@ def main(config):
   plt.savefig(t._savepath + '/ent_loss.pdf')
   plt.close('all')
 
-  if config.use_ba:
-    plt.figure(figsize=(10, 5))
-    plt.title('RMSE')
-    plt.plot(MSEs, linewidth=1)
-    plt.savefig(t._savepath + '/rmse.png')
-    plt.close('all')
 
 if __name__ == '__main__':
   ##############################
   # Pre configs.
   ##############################
-  from config import config
+  from config import get_config
+  config = get_config()
   np.set_printoptions(precision=4)
 
   # Fix random seeds.

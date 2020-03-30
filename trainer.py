@@ -362,6 +362,7 @@ class Trainer:
 
         dbody_out_real = self.FD(image)
         probs_real = self.D(dbody_out_real)
+        print(probs_real.size())
         # Minimize entropy to make certain prediction of real sample.
         ent_real = Entropy(probs_real)
         # Maximize marginal entropy over real samples to ensure equal usage.

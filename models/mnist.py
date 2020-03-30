@@ -221,5 +221,5 @@ class CatD(nn.Module):
   def forward(self, x):
     x = self.conv(x).view(-1, 128*7*7)
     x = self.fc(x)
-    x = self.softmax(x)  
+    x = self.softmax(x)
     return x
