@@ -1,6 +1,6 @@
 from InfoGAN import InfoGAN
 from SS_InfoGAN import SS_InfoGAN
-from CatGAN import CatGAN
+from InfoCatGAN import InfoCatGAN as CatGAN
 from config import get_config
 import utils
 

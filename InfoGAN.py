@@ -154,15 +154,6 @@ class InfoGAN(utils.BaseModel):
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
 
-      # if np.mean(self.measure['pre']) < np.mean(self.measure['cur']):
-      #   self.lr *= 0.5
-      #   g_optim, d_optim = _get_optimizer(self.lr)
-      # else:
-      #   print('M_pre: ' + str(np.mean(self.measure['pre'])) + ', M_cur: ' + str(np.mean(self.measure['cur'])))
-      #   self.measure['pre'] = self.measure['cur']
-      #   self.measure['cur'] = []
-      # self.log['lr'].append(self.lr)
-      
       if (epoch+1) % 1 == 0:
         img = self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
@@ -180,7 +171,6 @@ class InfoGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
-    self.plot_param(self.log, self.save_dir)
   
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
@@ -255,26 +245,3 @@ class InfoGAN(utils.BaseModel):
       fake_img = self.D(self.FD(fake_inputs))
       vutils.save_image(fake_img, fake_img_path, nrow=10)
   
-  def plot_param(self, log: dict, path: str):
-    plt.style.use('ggplot')
-    # plt.figure(figsize=(10, 5))
-    plt.title('K_t')
-    plt.plot(log['k_t'], linewidth=1)
-    plt.xlabel('Iterations')
-    plt.tight_layout()
-    plt.savefig(path + '/k_t.png')
-    plt.close('all')
-
-    plt.title('Learning rate with epoch')
-    plt.plot(log['lr'], linewidth=1)
-    plt.xlabel('Epochs')
-    plt.tight_layout()
-    plt.savefig(path + '/lr.png')
-    plt.close('all')
-
-    plt.title('Convergence measure')
-    plt.plot(log['measure'], linewidth=1)
-    plt.xlabel('Iterations')
-    plt.tight_layout()
-    plt.savefig(path + '/measure.png')
-    plt.close('all')
