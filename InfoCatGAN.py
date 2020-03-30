@@ -14,7 +14,6 @@ import utils
 class InfoCatGAN(utils.BaseModel):
   def __init__(self, config, dataset):
     super(InfoCatGAN, self).__init__(config, dataset)
-    self.num_disc_code = 1
     self.z_dim = config.num_noise_dim
     self.cat_dim = 10
 
@@ -41,7 +40,7 @@ class InfoCatGAN(utils.BaseModel):
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}, {'params': self.D.parameters()}]
       d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.0004, betas=(self.config.beta1, self.config.beta2)), \
+      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
              optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
       
     g_optim, d_optim = _get_optimizer(0)

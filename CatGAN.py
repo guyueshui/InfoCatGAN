@@ -60,7 +60,7 @@ class CatGAN(utils.BaseModel):
         imgs_cur_epoch = []
 
       t1.reset()
-      self.G.eval()
+      self.G.train()
       for num_iter, (image, _) in enumerate(dataloader):
         if image.size(0) != bs:
           break
@@ -77,7 +77,7 @@ class CatGAN(utils.BaseModel):
           instance_noise.normal_(0, std)
           image = image + instance_noise
 
-        d_real_simplex = self.D(image)
+        d_real_simplex, _ = self.D(image)
         # Minimize entropy to make certain prediction of real sample.
         ent_real = utils.Entropy(d_real_simplex)
         # Maximize marginal entropy over real samples to ensure equal usage.
@@ -91,7 +91,7 @@ class CatGAN(utils.BaseModel):
           # instance_noise.normal_(0, std)  # Regenerate instance noise!
           fake_image = fake_image + instance_noise
 
-        d_fake_simplex = self.D(fake_image.detach())
+        d_fake_simplex, _ = self.D(fake_image.detach())
         # Maximize entropy to make uncertain prediction of fake sample.
         ent_fake = utils.Entropy(d_fake_simplex)
 
@@ -103,15 +103,16 @@ class CatGAN(utils.BaseModel):
         # Train generator.
         g_optim.zero_grad()
 
-        noise = torch.randn(bs, self.z_dim).to(dv)
-        fake_image = self.G(noise)
+        # Does noise need to be regenerated?
+        # noise = torch.randn(bs, self.z_dim).to(dv)
+        # fake_image = self.G(noise)
 
-        ## Add instance noise if specified.
-        if self.config.instance_noise:
-          # instance_noise.normal_(0, std)  # Regenerate instance noise!
-          fake_image = fake_image + instance_noise
+        # ## Add instance noise if specified.
+        # if self.config.instance_noise:
+        #   # instance_noise.normal_(0, std)  # Regenerate instance noise!
+        #   fake_image = fake_image + instance_noise
 
-        d_fake_simplex = self.D(fake_image)
+        d_fake_simplex, _ = self.D(fake_image)
         # Fool D to make it believe the fake is real.
         ent_fake = utils.Entropy(d_fake_simplex)
         # Ensure equal usage of fake samples.
