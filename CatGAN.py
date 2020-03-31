@@ -204,3 +204,15 @@ class CatGAN(utils.BaseModel):
     im = Image.fromarray(ndarr)
     im.save(img_path)
     return ndarr
+
+  def classify(self, imgs, map_to_real):
+    assert len(map_to_real) == self.cat_dim
+    assert np.max(map_to_real) < self.cat_dim
+    assert np.min(map_to_real) >= 0
+    self.D.eval()
+    with torch.no_grad():
+      _, logits = self.D(imgs)
+      logits = logits.cpu().numpy()
+    fake_labels = np.argmax(logits, axis=1)
+    predicted = map_to_real[fake_labels].reshape(-1, 1)
+    return predicted
