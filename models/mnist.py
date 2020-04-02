@@ -165,7 +165,7 @@ class Discriminator(nn.Module):
     return x
 
 
-class Generator(nn.Module):
+class OfficialGenerator(nn.Module):
   'G = FrontG + Generator'
   def __init__(self, in_dim=74, out_dim=1):
     super(Generator, self).__init__()
@@ -197,29 +197,70 @@ class Generator(nn.Module):
 
 
 class CatD(nn.Module):
+  "Arch from CatGAN paper."
   def __init__(self, in_dim, out_dim):
     super(CatD, self).__init__()
 
     # in_dim x 28 x 28
     self.conv = nn.Sequential(
-      nn.Conv2d(in_dim, 64, 4, 2, 1),  # 64 x 14 x 14
-      nn.LeakyReLU(0.2),
-      nn.Conv2d(64, 128, 4, 2, 1),  # 128 x 7 x 7
-      nn.BatchNorm2d(128),
-      nn.LeakyReLU(0.2)
+      nn.Conv2d(in_dim, 32, 5),  # 24 x 24
+      nn.LeakyReLU(0.1),
+      nn.MaxPool2d(3, 2),  # 11 x 11
+      nn.Conv2d(32, 64, 3), # 9 x 9
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(64, 64, 3), # 7 x 7
+      nn.LeakyReLU(0.1),
+      nn.MaxPool2d(3, 2),  # 3 x 3
+      nn.Conv2d(64, 128, 3), # 1 x 1
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(128, 128, 1),  # 1 x 1
+      nn.LeakyReLU(0.1),
     )
 
     self.fc = nn.Sequential(
-      nn.Linear(128*7*7, 1024),
-      nn.BatchNorm1d(1024),
-      nn.LeakyReLU(0.2),
-      nn.Linear(1024, out_dim),
+      nn.Linear(128, out_dim),
+      nn.LeakyReLU(0.1),
+      # nn.Softmax(dim=1),
     )
 
     self.softmax = nn.Softmax(dim=1) # Each row sums to 1.
 
   def forward(self, x):
-    x = self.conv(x).view(-1, 128*7*7)
+    x = self.conv(x).view(-1, 128)
+    # print("after conv ", x.size())
     logits = self.fc(x)
     simplex = self.softmax(logits)
     return simplex, logits
+
+
+class CatG(nn.Module):
+  'Architecture from CatGAN paper.'
+  def __init__(self, in_dim=128, out_dim=1):
+    super(CatG, self).__init__()
+
+    # bs x input_dim
+    self.fc = nn.Sequential(
+      nn.Linear(in_dim, 7*7*96),
+      nn.BatchNorm1d(7*7*96),
+      nn.LeakyReLU(0.1),
+    )
+
+    self.deconv = nn.Sequential(
+      # nn.MaxUnpool2d(2),
+      nn.Upsample(scale_factor=2),
+      nn.Conv2d(96, 64, 5, 1, 2),
+      nn.LeakyReLU(0.1),
+
+      # nn.MaxUnpool2d(2),
+      nn.Upsample(scale_factor=2),
+      nn.Conv2d(64, 64, 5, 1, 2),
+      nn.LeakyReLU(0.1),
+
+      nn.Conv2d(64, out_dim, 5, 1, 2),
+      nn.LeakyReLU(0.1),
+    )
+
+  def forward(self, x):
+    x = self.fc(x).view(-1, 96, 7, 7)
+    x = self.deconv(x)
+    return x

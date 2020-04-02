@@ -6,6 +6,36 @@ from utils import CustomDataset
 from config import get_config
 from CatGAN import CatGAN
 
+class Classifier:
+  def __init__(self, model, model_state, dataset):
+    """
+    Args:
+    -- model: the model to perform classify task
+    -- model_state (str): full path of model checkpoint
+    -- dataset: dataset used to perform classification 
+    """
+    self.dataloader = torch.utils.data.DataLoader(dataset, 
+                      batch_size=100, shuffle=False, num_workers=4)
+    model.load_model(model_state, *model.models)
+
+  def classify(self):
+    num_correct = 0
+    for num_iter, (images, labels) in enumerate(self.dataloader):
+      images = images.to(model.device)
+      predicted = model.classify(images, map_to_real)
+      with torch.no_grad():
+        labels = labels.numpy()
+
+      assert predicted.shape == labels.shape
+      loss = abs(predicted - labels)
+      _, cnt = np.unique(loss, return_counts=True)
+      batch_num_correct = cnt[0]
+      # print('Matched: ', batch_num_correct)
+      num_correct += batch_num_correct
+      
+    acc = num_correct / len(dataset)
+    print('Accuracy is: ', acc)
+
 args = get_config()
 path = 'results/' + args.dataset
 path += '/catgan'

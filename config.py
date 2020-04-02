@@ -27,6 +27,7 @@ parser.add_argument('-f', help='For ipython debug.')
 parser.add_argument('--instance_noise', action='store_true', help='Whether to use instance noise trick.')
 parser.add_argument('--gan_type', type=str, help='[infogan | ssinfogan | began | catgan], implemented gan models.')
 parser.add_argument('--fid', action='store_true', help='Whether to compute FID score.')
+parser.add_argument('--perform_classification', action='store_true', help='Wheter perform classification after training.')
 
 parser.add_argument('--lr', type=float, default=0.0001)
 parser.add_argument('--beta1', type=float, default=0.5)

@@ -27,6 +27,16 @@ def main(config):
     raise NotImplementedError('unsupport gan type')
   gan.train()
 
+  if config.perform_classification:
+    from classify import Classifier
+    import glob
+    
+    dataset_to_classify = utils.get_data(config.dataset, config.data_root, train=False)
+    for pt in glob.glob(gan.save_dir + '/' + '*.pt'):
+      print(pt)
+      c = Classifier(gan, pt, dataset_to_classify)
+      c.classify()
+
 
 if __name__ == '__main__':
   args = get_config()
@@ -36,6 +46,8 @@ if __name__ == '__main__':
   torch.manual_seed(args.seed)
   main(args)
 
+
 #TODO:
 # - reproduce catgan (classification)
 # - compute inception score
+# - add classification part
