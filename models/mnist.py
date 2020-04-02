@@ -166,9 +166,9 @@ class Discriminator(nn.Module):
 
 
 class OfficialGenerator(nn.Module):
-  'G = FrontG + Generator'
+  'Arch from InfoGAN paper.'
   def __init__(self, in_dim=74, out_dim=1):
-    super(Generator, self).__init__()
+    super(OfficialGenerator, self).__init__()
 
     # bs x input_dim
     self.fc = nn.Sequential(
@@ -194,6 +194,67 @@ class OfficialGenerator(nn.Module):
     x = self.fc(x).view(-1, 128, 7, 7)
     x = self.deconv(x)
     return x
+
+
+class OfficialDbody(nn.Module):
+  'Arch from InfoGAN paper.'
+  def __init__(self, in_dim, out_dim=1024):
+    super(OfficialDbody, self).__init__()
+
+    # in_dim x 28 x 28
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4, 2, 1),  # 64 x 14 x 14
+      nn.LeakyReLU(0.2),
+      nn.Conv2d(64, 128, 4, 2, 1),  # 128 x 7 x 7
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.2)
+    )
+
+    self.fc = nn.Sequential(
+      nn.Linear(128*7*7, 1024),
+      nn.BatchNorm1d(1024),
+      nn.LeakyReLU(0.2),
+    )
+
+  def forward(self, x):
+    x = self.conv(x).view(-1, 128*7*7)
+    x = self.fc(x)
+    return x
+
+
+class OfficialDhead(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(OfficialDhead, self).__init__()
+    self.main = nn.Sequential(
+      nn.Linear(in_dim, out_dim),
+      nn.Sigmoid()
+    )
+
+  def forward(self, x):
+    x = self.main(x)
+    return x
+
+
+class OfficialQ(nn.Module):
+  def __init__(self, latent_dim, dis_dim=10, con_dim=2):
+    super(OfficialQ, self).__init__()
+    self.fc = nn.Sequential(
+      nn.Linear(latent_dim, 128),
+      nn.BatchNorm1d(128),
+      nn.LeakyReLU(0.2),
+      # nn.Linear(128, self.dis_dim + self.con_dim)
+    )
+
+    self.disc = nn.Linear(128, dis_dim)
+    self.mu = nn.Linear(128, con_dim)
+    self.var = nn.Linear(128, con_dim)
+
+  def forward(self, x):
+    x = self.fc(x)
+    disc_logits = self.disc(x)
+    mu = self.mu(x)
+    var = self.var(x).exp()
+    return disc_logits, mu, var
 
 
 class CatD(nn.Module):

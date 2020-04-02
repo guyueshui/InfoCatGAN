@@ -1,6 +1,3 @@
-# TODO:
-# [ ] try improved infogan loss
-# [ ] modify network architecture
 import os
 import torch
 import torchvision
@@ -13,7 +10,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
-import models.mnist as nets
 
 class InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -22,23 +18,12 @@ class InfoGAN(utils.BaseModel):
     self.num_cont_code = 2
     self.z_dim = config.num_noise_dim
     self.cat_dim = 10
-    self.lr = config.lr
-    self.gamma = config.gamma
-    self.lambda_k = config.lambda_k
-
     self.models = self.build_model()
 
   def train(self):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
-    self.log['k_t'] = []
-    self.log['lr'] = [self.config.lr]
-    self.log['measure'] = [1]
-    self.measure = {} # convergence measure
-    self.measure['pre'] = []
-    self.measure['pre'].append(1)
-    self.measure['cur'] = []
     generated_images = []
     
     bs = self.config.batch_size
@@ -70,9 +55,8 @@ class InfoGAN(utils.BaseModel):
       return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
              optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
       
-    g_optim, d_optim = _get_optimizer(self.lr)
+    g_optim, d_optim = _get_optimizer(0)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
-    # real_fixed_image = next(iter(dataloader))[0].to(dv)
 
     # Training...
     print('-'*25)
@@ -84,8 +68,6 @@ class InfoGAN(utils.BaseModel):
 
     t0 = utils.ETimer() # train timer
     t1 = utils.ETimer() # epoch timer
-    # k_t = 0
-    # self.log['k_t'].append(k_t)
 
     self.FD.train()
     self.D.train()
@@ -134,16 +116,6 @@ class InfoGAN(utils.BaseModel):
         g_loss.backward()
         g_optim.step()
 
-        # # Convergence metric.
-        # balance = (self.gamma * d_loss_real - reconstruct_loss).item()
-        # temp_measure = d_loss_real + abs(balance)
-        # self.measure['cur'] = temp_measure.item()
-        # self.log['measure'].append(self.measure['cur'])
-        # # update k_t
-        # k_t += (self.lambda_k * balance)
-        # k_t = max(0, min(1, k_t))
-        # self.log['k_t'].append(k_t)
-
         # Print progress...
         if (num_iter+1) % 100 == 0:
           print('Epoch: ({:2.0f}/{:2.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
@@ -162,7 +134,7 @@ class InfoGAN(utils.BaseModel):
     training_time = t0.elapsed()
     print('-'*50)
     print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
-    self.save_model(self.save_dir, self.config.num_epoch, self.models)
+    self.save_model(self.save_dir, self.config.num_epoch, *self.models)
     print('-'*50)
 
     # Manipulating continuous latent codes.
@@ -179,15 +151,15 @@ class InfoGAN(utils.BaseModel):
     # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
-    self.G = nets.GeneratorCNN(noise_dim, channel, 0,0)
-    self.FD = nets.Dbody(channel, latent_dim)
-    self.D = nets.DProbHead(latent_dim, channel)
-    self.Q = nets.QHead(latent_dim, self.cat_dim, self.num_cont_code)
+    import models.mnist as nets
+    self.G = nets.OfficialGenerator(noise_dim, channel)
+    self.FD = nets.OfficialDbody(channel, latent_dim)
+    self.D = nets.OfficialDhead(latent_dim, channel)
+    self.Q = nets.OfficialQ(latent_dim, self.cat_dim, self.num_cont_code)
     networks = [self.G, self.FD, self.D, self.Q]
     for i in networks:
       i.apply(utils.weights_init)
       i.to(self.device)
-      utils.print_network(i)
     return networks
 
   def generate_noise(self, z, disc_c, cont_c, prob=None):
@@ -236,12 +208,10 @@ class InfoGAN(utils.BaseModel):
     im.save(img_path)
     return ndarr
 
-  def autoencode(self, inputs, path, idx=None, fake_inputs=None):
-    img_path = os.path.join(path, 'D-epoch-{}.png'.format(idx))
-    img = self.D(self.FD(inputs))
-    vutils.save_image(img, img_path, nrow=10)
-    if fake_inputs is not None:
-      fake_img_path = os.path.join(path, 'D_fake-epoch-{}.png'.format(idx))
-      fake_img = self.D(self.FD(fake_inputs))
-      vutils.save_image(fake_img, fake_img_path, nrow=10)
-  
+  def raw_classify(self, imgs):
+    imgs = imgs.to(self.device)
+    self.FD.eval()
+    self.Q.eval()
+    with torch.no_grad():
+      logits, _, _ = self.Q(self.FD(imgs))
+    return logits.cpu().numpy()
