@@ -366,5 +366,5 @@ class SomeD(nn.Module):
     x = self.down_sample_layer3(x)
     x = torch.flatten(x,1)
     x = self.fc_layer4(x)
-    x = self.softmax(x)
-    return x, None
+    simplex = self.softmax(x)
+    return simplex, x

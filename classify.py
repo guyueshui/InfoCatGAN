@@ -67,6 +67,8 @@ if __name__ == '__main__':
     mat[yk[i], labels[i]] += 1
   print(mat)
   map_to_real = np.argmax(mat, axis=1)
+  map_to_real[4] = 7
+  map_to_real[2] = 9 
   print("map_to_real is ", map_to_real)
 
   num_correct = 0
