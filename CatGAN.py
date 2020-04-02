@@ -34,7 +34,7 @@ class CatGAN(utils.BaseModel):
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}]
       d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=1e-3, betas=(self.config.beta1, self.config.beta2)), \
+      return optim.Adam(g_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)), \
              optim.Adam(d_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)),
 
     g_optim, d_optim = _get_optimizer(0)
@@ -136,6 +136,8 @@ class CatGAN(utils.BaseModel):
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
       # end of epoch
+      if (epoch+1) % 25 == 0:
+        self.save_model(self.save_dir, epoch+1, *self.models)
       # Add FID score...
       if self.config.fid:
         fake_list = []
@@ -214,5 +216,5 @@ class CatGAN(utils.BaseModel):
       _, logits = self.D(imgs)
       logits = logits.cpu().numpy()
     fake_labels = np.argmax(logits, axis=1)
-    predicted = map_to_real[fake_labels].reshape(-1, 1)
+    predicted = map_to_real[fake_labels].reshape(-1)
     return predicted

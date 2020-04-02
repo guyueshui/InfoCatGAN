@@ -9,6 +9,8 @@ import imageio
 import math
 import os
 import json
+import matplotlib as mpl
+mpl.use('AGG')
 
 from torchvision.datasets import VisionDataset
 

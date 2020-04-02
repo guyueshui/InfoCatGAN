@@ -2,13 +2,14 @@ import torch
 import numpy as np
 
 from utils import get_data
+from utils import CustomDataset
 from config import get_config
 from CatGAN import CatGAN
 
 args = get_config()
 path = 'results/' + args.dataset
-path += '/re-ssinfogan'
-path += '/model-epoch-70.pt'
+path += '/catgan'
+path += '/model-epoch-100.pt'
 
 dataset = get_data(args.dataset, args.data_root, train=False)
 gan = CatGAN(args, dataset)
@@ -16,24 +17,27 @@ gan.load_model(path, gan.D)
 
 if __name__ == '__main__':
   # Use test dataset.
-  print(len(dataset))
   loader = torch.utils.data.DataLoader(dataset, batch_size=100, shuffle=False, num_workers=1)
 
   # Category matching step of CatGAN.
-  abatch = next(iter(loader))
+  dset = CustomDataset(dataset, 0.01)
+  dset.report()
+  labeled_set = torch.utils.data.DataLoader(dset.labeled, batch_size=100)
+  abatch = next(iter(labeled_set))
   images, labels = abatch
   images = images.to(gan.device)
   with torch.no_grad():
-    yk = gan.D(images)
-    yk = yk.numpy()
-    labels = labels.numpy()
+    _, logits = gan.D(images)
+    logits = logits.cpu().numpy()
+    yk = np.argmax(logits, axis=1).reshape(-1)
+    labels = labels.numpy().reshape(-1)
   assert len(yk) == len(labels)
-  mat = np.zeros((len(yk), len(labels)), dtype=int)
+  mat = np.zeros((10, 10), dtype=int)
   for i in range(len(yk)):
     mat[yk[i], labels[i]] += 1
   print(mat)
   map_to_real = np.argmax(mat, axis=1)
-  print(map_to_real)
+  print("map_to_real is ", map_to_real)
 
   num_correct = 0
   for num_iter, (images, labels) in enumerate(loader):

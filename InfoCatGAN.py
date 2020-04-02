@@ -38,7 +38,7 @@ class InfoCatGAN(utils.BaseModel):
     celoss = nn.CrossEntropyLoss().to(dv)
 
     def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}, {'params': self.D.parameters()}]
+      g_step_params = [{'params': self.G.parameters()}]#, {'params': self.D.parameters()}]
       d_step_params = [{'params': self.D.parameters()}]
       return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
              optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
@@ -94,7 +94,7 @@ class InfoCatGAN(utils.BaseModel):
         # Ensure equal usage of fake samples.
         margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
         targets = torch.LongTensor(idx).to(dv)
-        binding_loss = celoss(d_fake_logits, targets) * 0.8
+        binding_loss = celoss(d_fake_logits, targets) * 2.0
 
         g_loss = ent_fake - margin_ent_fake + binding_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
