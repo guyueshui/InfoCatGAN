@@ -264,3 +264,107 @@ class CatG(nn.Module):
     x = self.fc(x).view(-1, 96, 7, 7)
     x = self.deconv(x)
     return x
+
+#============= following arch from ===============
+# https://raw.githubusercontent.com/minlee077/CATGAN-pytorch/master/notebooks/CATGAN.ipynb
+def conv_bn_lrelu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.Sequential(
+    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
+    nn.LeakyReLU(0.2)
+  )
+def conv_bn_lrelu_drop_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.Sequential(
+    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
+    nn.LeakyReLU(0.2),
+    nn.Dropout(0.5)
+  )
+def tconv_bn_relu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.Sequential(
+    nn.ConvTranspose2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
+    nn.ReLU()
+  )
+
+def tconv_bn_lrelu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.Sequential(
+    nn.ConvTranspose2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
+    nn.ReLU()
+  )
+  
+def tconv_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.ConvTranspose2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding)
+
+def conv_lrelu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.Sequential(
+    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+    nn.LeakyReLU(0.2)
+  )
+
+def conv_lrelu_drop_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
+  return nn.Sequential(
+    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+    nn.LeakyReLU(0.2)
+  )
+
+def fc_bn_layer(in_features,out_features):
+  return nn.Sequential(
+    nn.Linear(in_features,out_features),
+    nn.BatchNorm1d(out_features)
+  )
+
+def fc_layer(in_features,out_features):
+  return nn.Linear(in_features,out_features)
+
+import math
+def conv_out_size_same(size, stride):
+  return int(math.ceil(float(size) / float(stride)))
+
+s_h, s_w = 28, 28
+s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
+s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
+s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
+gf_dim = 32
+df_dim = 32
+
+class SomeG(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(SomeG,self).__init__()
+    self.fc_layer1 = fc_layer(in_dim,s_h8*s_w8*gf_dim*4)
+    self.bn_layer1 = nn.BatchNorm2d(gf_dim*4)#4x4
+    self.up_sample_layer2 = tconv_bn_relu_layer(gf_dim*4,gf_dim*2,3,stride=2,padding=1)#7x7
+    self.up_sample_layer3 = tconv_bn_relu_layer(gf_dim*2,gf_dim,4,stride=2,padding=1)#14x14
+    self.up_sample_layer4 = tconv_layer(gf_dim,out_dim,4,stride=2,padding=1)#28x28
+    self.tanh = nn.Tanh()
+
+
+  def forward(self, x):
+    x = self.fc_layer1(x)
+    x = x.view(-1,gf_dim*4,s_h8,s_w8)
+    x = self.bn_layer1(x)
+    x = self.up_sample_layer2(x)
+    x = self.up_sample_layer3(x)
+    x = self.up_sample_layer4(x)
+    x = self.tanh(x)
+    return x
+
+import torch
+class SomeD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(SomeD,self).__init__()
+    self.down_sample_layer1 = conv_lrelu_layer(in_dim,df_dim,4,stride=2,padding=1)# 14x14
+    self.down_sample_layer2 = conv_bn_lrelu_layer(df_dim,df_dim*2,4,stride=2,padding=1)#7x7
+    self.down_sample_layer3 = conv_bn_lrelu_layer(df_dim*2,df_dim*4,3,stride=2,padding=1)
+    self.fc_layer4 = fc_layer(df_dim*4*s_h8*s_w8,out_dim)
+    self.softmax = nn.Softmax(dim=-1)
+
+  def forward(self, x):
+    x = self.down_sample_layer1(x)
+    x = self.down_sample_layer2(x)
+    x = self.down_sample_layer3(x)
+    x = torch.flatten(x,1)
+    x = self.fc_layer4(x)
+    x = self.softmax(x)
+    return x, None
