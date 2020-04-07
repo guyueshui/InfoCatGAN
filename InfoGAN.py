@@ -129,6 +129,7 @@ class InfoGAN(utils.BaseModel):
       if (epoch+1) % 1 == 0:
         img = self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
+        self.save_model(self.save_dir, epoch+1, *self.models)
 
     # Training finished.
     training_time = t0.elapsed()

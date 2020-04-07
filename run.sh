@@ -1,2 +1,8 @@
 #!/bin/bash
-python launch.py --gan_type='catgan' --experiment_tag='catgan' --num_epoch=100 --num_noise_dim=128 --instance_noise
+python launch.py \
+  --gan_type='infogan' \
+  --experiment_tag='fuck' \
+  --num_epoch=5 \
+  --num_noise_dim=128 \
+  --instance_noise \
+  --perform_classification
