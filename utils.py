@@ -7,8 +7,11 @@ import matplotlib.pyplot as plt
 import time as t
 import imageio
 import math
+import os
+import json
+import matplotlib as mpl
+mpl.use('AGG')
 
-from config import config
 from torchvision.datasets import VisionDataset
 
 class Noiser:
@@ -127,6 +130,7 @@ class BlahutArimoto:
 
     return f, post_dist
 
+
 class ImbalanceSampler:
   'Make an imbalanced dataset by deleting something.'
 
@@ -153,8 +157,8 @@ class LogGaussian:
   Custom loss for Q network.
   """
   def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
-    logli = -0.5 * (var.mul(2*np.pi) + config.tiny).log() - \
-            (x-mu).pow(2).div(var.mul(2.0) + config.tiny)
+    logli = -0.5 * (var.mul(2*np.pi) + 1e-6).log() - \
+            (x-mu).pow(2).div(var.mul(2.0) + 1e-6)
     return logli.sum(1).mean().mul(-1)
 
 
@@ -183,7 +187,7 @@ def weights_init(m):
     m.bias.data.fill_(0)
 
 
-def get_data(dbname: str, data_root: str):
+def get_data(dbname: str, data_root: str, train=True):
   'Get training dataset.'
 
   if dbname == 'MNIST':
@@ -193,7 +197,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor()
     ])
 
-    dataset = dsets.MNIST(data_root, train=True, download=True, transform=transform)
+    dataset = dsets.MNIST(data_root, train=train, download=True, transform=transform)
 
   elif dbname == 'FashionMNIST':
     transform = transforms.Compose([
@@ -202,7 +206,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor()
     ])
 
-    dataset = dsets.FashionMNIST(data_root, train=True, transform=transform, 
+    dataset = dsets.FashionMNIST(data_root, train=train, transform=transform, 
                                  download=True)
 
   elif dbname == "CIFAR10":
@@ -212,7 +216,7 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
     
-    dataset = dsets.CIFAR10(data_root, train=True, transform=transform, 
+    dataset = dsets.CIFAR10(data_root, train=train, transform=transform, 
                             download=True)
     
   elif dbname == 'CelebA':
@@ -222,7 +226,8 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
 
-    dataset = dsets.CelebA(data_root, transform=transform, download=True)
+    # dataset = dsets.CelebA(data_root, transform=transform, download=False)
+    dataset = dsets.ImageFolder(data_root, transform=transform)
 
   elif dbname == 'STL10':
     transform = transforms.Compose([
@@ -231,7 +236,8 @@ def get_data(dbname: str, data_root: str):
       transforms.ToTensor(),
     ])
 
-    dataset = dsets.STL10(data_root, transform=transform)
+    split = 'train' if train else 'test'
+    dataset = dsets.STL10(data_root, split=split, transform=transform)
   
   else:
     raise NotImplementedError
@@ -254,66 +260,20 @@ class CustomDataset:
     # Make a uniform labeled subset.
     num_classes = len(dset.class_to_idx)
     num_data_per_class = self.num_labeled_data // num_classes
-    targets_to_draw = np.arange(num_classes).repeat(num_data_per_class).tolist()
-    while len(targets_to_draw) < self.num_labeled_data:
-      targets_to_draw.append(np.random.randint(num_classes))
+
+    # Construct counter...
+    counter = [0 for i in range(num_classes)]
+    for i in range(num_classes):
+      counter[i] = num_data_per_class
+    while sum(counter) < self.num_labeled_data:
+      counter[np.random.randint(num_classes)] += 1
+    assert sum(counter) == self.num_labeled_data, "cannot meets the labeled condition"
+
+    self.labeled_dist = counter / np.sum(counter)
     idx_to_draw = []
-    start = 0
     for i, label in enumerate(dset.targets):
-      if start < len(targets_to_draw):
-        if label == targets_to_draw[start]:
-          idx_to_draw.append(i)
-          start += 1
-      else:
-        break
+      if counter[label] > 0:
+        idx_to_draw.append(i)
+        counter[label] -= 1
     mask = np.zeros(len(dset), dtype=bool)
     mask[idx_to_draw] = True
-    _, cnts = np.unique(targets_to_draw, return_counts=True)
-    self.labeled_dist = cnts / np.sum(cnts)
-
-    self.labeled_data = copy.deepcopy(dset)
-    self.labeled_data.data = dset.data[mask]
-    self.labeled_data.targets = np.asarray(dset.targets)[mask].tolist()
-
-    self.unlabeled_data = copy.deepcopy(dset)
-    self.unlabeled_data.data = np.delete(dset.data, idx_to_draw, axis=0)
-  
-  @property
-  def labeled(self):
-    return self.labeled_data
-
-  @property
-  def unlabeled(self):
-    return self.unlabeled_data
-
-  def report(self):
-    print('-'*25)
-    print('Origin dataset has {} samples'.format(self.num_data))
-    print('Now splitted into {} labeled/ {} unlabeled'
-          .format(len(self.labeled_data), len(self.unlabeled_data)))
-    print('The labeled dist is: ', self.labeled_dist)
-    print('-'*25)
-    
-
-def MarginalEntropy(y):
-  y1 = torch.autograd.Variable(torch.randn(y.size(1)).type(torch.FloatTensor), requires_grad=True)
-  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
-  y1 = y.mean(0)
-  y2 = -torch.sum(y1 * torch.log(y1 + 1e-6))
-  return y2
-
-def Entropy(y):
-  y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
-  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
-  y1 = -y * torch.log(y + 1e-6)
-  y2 = 1.0 / config.batch_size * y1.sum()
-  return y2
-
-def DrawDistribution(dataset, title='Distribution of dataset'):
-  'Draw the distribution per label of a given dataset.'
-  label, counts = np.unique(dataset.targets, return_counts=True)
-  fig, ax = plt.subplots()
-  ax.bar(label, counts)
-  ax.set_xticks(label)
-  ax.set_title(title)
-  fig.show()
