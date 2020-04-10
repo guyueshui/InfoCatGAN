@@ -1,6 +1,7 @@
 # Networks for MNIST dataset. torch.Size([batch_size, 1, 28, 28])
 
 import torch.nn as nn
+import numpy as np
 
 class FrontD(nn.Module):
   ''' front end part of discriminator and Q'''

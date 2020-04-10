@@ -221,8 +221,8 @@ def get_data(dbname: str, data_root: str, train=True):
     
   elif dbname == 'CelebA':
     transform = transforms.Compose([
-      transforms.Resize(32),
-      transforms.CenterCrop(32),
+      transforms.Resize(70),
+      transforms.CenterCrop(64),
       transforms.ToTensor(),
     ])
 

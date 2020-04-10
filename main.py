@@ -6,14 +6,19 @@ import matplotlib.pyplot as plt
 plt.style.use('ggplot')
 
 from trainer import Trainer
+from config import get_config
 from utils import weights_init, get_data, ImbalanceSampler
 
 def main(config):
   if config.dataset == 'MNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'FashionMNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'STL10':
     import models.stl10 as nets
