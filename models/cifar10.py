@@ -168,3 +168,67 @@ class Qsemi(nn.Module):
   def forward(self, x):
     x = self.main(x).squeeze()
     return x
+
+#============= Architecture for CatGAN ==================#
+# see https://github.com/xinario/catgan_pytorch/blob/master/catgan_cifar10.py
+nlayers = 64
+
+class CatG(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(CatG, self).__init__()
+    self.main = nn.Sequential(
+      # input is Z, going into a convolution
+      nn.ConvTranspose2d(in_dim, nlayers * 4, 4, 1, 0, bias=False),
+      nn.BatchNorm2d(nlayers * 4),
+      nn.LeakyReLU(0.2, inplace=True),
+      # state size. (nlayers*8) x 4 x 4
+      nn.ConvTranspose2d(nlayers * 4, nlayers * 2, 4, 2, 1, bias=False),
+      nn.BatchNorm2d(nlayers * 2),
+      nn.LeakyReLU(0.2, inplace=True),
+      # state size. (nlayers*4) x 8 x 8
+      nn.ConvTranspose2d(nlayers * 2, nlayers, 4, 2, 1, bias=False),
+      nn.BatchNorm2d(nlayers),
+      nn.LeakyReLU(0.2, inplace=True),
+      # state size. (nlayers*2) x 16 x 16
+      nn.ConvTranspose2d(nlayers, out_dim, 4, 2, 1, bias=False),
+      nn.Tanh()
+      # state size. (nc) x 32 x 32
+    )
+
+  def forward(self, x):
+    if len(x.size()) == 2:
+      a, b = x.size()
+      x = x.view(a, b, 1, 1)
+    output = self.main(x)
+    return output
+
+class CatD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(CatD, self).__init__()
+    self.out_dim = out_dim
+    self.main = nn.Sequential(
+      nn.Conv2d(in_dim, nlayers, 4, 2, 1, bias=False),
+      nn.BatchNorm2d(nlayers),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),#64x16x16
+      nn.Conv2d(nlayers, 2 * nlayers, 4, 2, 1, bias=False),
+      nn.BatchNorm2d(2*nlayers),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),#128x8x8
+      nn.Conv2d(2 * nlayers, 4 * nlayers, 4, 2, 1, bias=False),
+      nn.BatchNorm2d(4*nlayers),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),#256x4x4
+      nn.Conv2d(4*nlayers, 4*nlayers, 4),
+      nn.BatchNorm2d(4*nlayers),
+      nn.LeakyReLU(0.2, inplace=True),
+      nn.Dropout(0.5),#256x1x1
+      nn.Conv2d(4*nlayers, out_dim, 1)
+    )
+
+    self.softmax = nn.Softmax(dim=1) # Each row sums to 1.
+
+  def forward(self, x):
+    logits = self.main(x).view(-1, self.out_dim)
+    simplex = self.softmax(logits)
+    return simplex, logits

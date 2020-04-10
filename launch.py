@@ -14,6 +14,8 @@ def main(config):
           "{} images will be used in training.".format(len(dataset)))
   elif config.dataset == 'MNIST':
     dataset = utils.get_data('MNIST', config.data_root)
+  elif config.dataset == 'CIFAR10':
+    dataset = utils.get_data('CIFAR10', config.data_root)
   else:
     raise NotImplementedError('unsupport dataset')
 
@@ -33,7 +35,6 @@ def main(config):
     
     dataset_to_classify = utils.get_data(config.dataset, config.data_root, train=False)
     for pt in glob.glob(gan.save_dir + '/' + '*.pt'):
-      print(pt)
       c = Classifier(gan, pt, dataset_to_classify)
       c.classify()
 
