@@ -277,3 +277,131 @@ class CustomDataset:
         counter[label] -= 1
     mask = np.zeros(len(dset), dtype=bool)
     mask[idx_to_draw] = True
+
+    self.labeled_data = copy.deepcopy(dset)
+    self.labeled_data.data = dset.data[mask]
+    self.labeled_data.targets = np.asarray(dset.targets)[mask].tolist()
+
+    self.unlabeled_data = copy.deepcopy(dset)
+    self.unlabeled_data.data = np.delete(dset.data, idx_to_draw, axis=0)
+  
+  @property
+  def labeled(self):
+    return self.labeled_data
+
+  @property
+  def unlabeled(self):
+    return self.unlabeled_data
+
+  def report(self):
+    print('-'*25)
+    print('Origin dataset has {} samples'.format(self.num_data))
+    print('Now splitted into {} labeled/ {} unlabeled'
+          .format(len(self.labeled_data), len(self.unlabeled_data)))
+    print('The labeled dist is: ', self.labeled_dist)
+    print('-'*25)
+    
+
+def MarginalEntropy(y):
+  y1 = torch.autograd.Variable(torch.randn(y.size(1)).type(torch.FloatTensor), requires_grad=True)
+  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  y1 = y.mean(0)
+  y2 = -torch.sum(y1 * torch.log(y1 + 1e-6))
+  return y2
+
+def Entropy(y):
+  bs = y.size(0)
+  y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
+  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  y1 = -y * torch.log(y + 1e-6)
+  y2 = 1.0 / bs * y1.sum()
+  return y2
+
+def DrawDistribution(dataset, title='Distribution of dataset'):
+  'Draw the distribution per label of a given dataset.'
+  label, counts = np.unique(dataset.targets, return_counts=True)
+  fig, ax = plt.subplots()
+  ax.bar(label, counts)
+  ax.set_xticks(label)
+  ax.set_title(title)
+  fig.show()
+
+def plot_loss(log: dict, path: str):
+  plt.style.use('ggplot')
+
+  # loss
+  # plt.figure(figsize=(10, 5))
+  plt.title('GAN Loss')
+  plt.plot(log['g_loss'], label='G', linewidth=1)
+  plt.plot(log['d_loss'], label='D', linewidth=1)
+  plt.xlabel('Iterations')
+  plt.ylabel('Loss')
+  plt.legend(loc='upper right')
+  plt.tight_layout()
+  plt.savefig(path + '/gan_loss.png')
+  plt.close('all')
+  
+def print_network(net):
+  num_params = 0
+  for param in net.parameters():
+    num_params += param.numel()
+  print(net)
+  print("Total number of parameters: %d." % num_params)
+
+class BaseModel(object):
+  def __init__(self, config, dataset):
+    self.config = config
+    self.dataset = dataset
+
+    if config.gpu == 0:  # GPU selection.
+      self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    elif config.gpu == 1:
+      self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    elif config.gpu == -1:
+      self.device = torch.device('cpu')
+    else:
+      raise IndexError('Invalid GPU index')
+
+    save_dir = os.path.join(os.getcwd(), 'results', 
+                            config.dataset, config.experiment_tag)
+    if not os.path.exists(save_dir):
+      os.makedirs(save_dir)
+    self.save_dir = save_dir
+    # Write experiment settings to file.
+    with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+      # for k, v in config.__dict__.items():
+      #   f.write('{:>15s} : {:<}\n'.format(str(k), str(v)))
+      json.dump(config.__dict__, f, indent=4, sort_keys=True)      
+  
+  def save_model(self, path, idx=None, *models):
+    dic = {}
+    for m in models:
+      dic[m.__class__.__name__] = m.state_dict()
+    fname = os.path.join(path, 'model-epoch-{}.pt'.format(idx))
+    torch.save(dic, fname)
+    print("-- model saved as ", fname)
+
+  def load_model(self, fname, *models):
+    params = torch.load(fname)
+    for m in models:
+      m.load_state_dict(params[m.__class__.__name__])
+    print("-- load model from ", fname)
+
+  def generate(self, generator, noise, fname, nrow=10):
+    "Generate fake images."
+    generator.eval()
+    img_path = os.path.join(self.save_dir, fname)
+    from PIL import Image
+    from torchvision.utils import make_grid
+    tensor = generator(noise)
+    grid = make_grid(tensor, nrow, padding=2)
+    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+    ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+    im = Image.fromarray(ndarr)
+    im.save(img_path)
+    return ndarr
+
+def dup2rgb(single_channel_img):
+  'Convert a black-white image to RGB image by duplicate channel 3 times.'
+  ret = torch.cat([single_channel_img]*3)
+  return ret

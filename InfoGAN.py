@@ -52,11 +52,12 @@ class InfoGAN(utils.BaseModel):
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
       d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
+      return optim.Adam(g_step_params, lr=0.001, betas=(0.5, 0.99)), \
+             optim.Adam(d_step_params, lr=0.0002, betas=(0.5, 0.99)),
       
     g_optim, d_optim = _get_optimizer(0)
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
+    tot_iters = len(dataloader)
 
     # Training...
     print('-'*25)
@@ -81,6 +82,14 @@ class InfoGAN(utils.BaseModel):
         
         image = image.to(dv)
 
+        # Guided by https://github.com/soumith/ganhacks#13-add-noise-to-inputs-decay-over-time
+        # This may be helpful for generator convergence.
+        if self.config.instance_noise:
+          instance_noise = torch.zeros_like(images)
+          std = -0.1 / tot_iters * num_iter + 0.1
+          instance_noise.normal_(0, std)
+          images = images + instance_noise
+
         # Update discriminator.
         d_optim.zero_grad()
         d_real = self.D(self.FD(image))
@@ -90,6 +99,11 @@ class InfoGAN(utils.BaseModel):
 
         noise, idx = self.generate_noise(z, disc_c, cont_c)
         fake_image = self.G(noise)
+
+        ## Add instance noise if specified.
+        if self.config.instance_noise:
+          fake_image = fake_image + instance_noise
+
         d_fake = self.D(self.FD(fake_image.detach()))
         labels.fill_(fake_label)
         d_loss_fake = DLoss(d_fake, labels) 
@@ -187,7 +201,7 @@ class InfoGAN(utils.BaseModel):
 
     c1 = np.hstack([c, np.zeros_like(c)])
     c2 = np.hstack([np.zeros_like(c), c])
-    c3 = np.random.uniform(-1, 1, (100, self.num_cont_code))
+    c3 = np.random.uniform(-1, 1, (100, 2))
 
     idx = np.arange(self.cat_dim).repeat(10)
     one_hot = np.zeros((100, self.cat_dim))
