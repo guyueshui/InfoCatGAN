@@ -1,22 +1,22 @@
 # Networks for MNIST dataset. torch.Size([batch_size, 1, 28, 28])
 
 import torch.nn as nn
-import numpy as np
 
+#========= following arch from =============
+# https://github.com/pianomania/infoGAN-pytorch/blob/master/model.py
 class FrontD(nn.Module):
   ''' front end part of discriminator and Q'''
-
-  def __init__(self):
+  def __init__(self, in_dim=1, out_dim=1024):
     super(FrontD, self).__init__()
 
     self.main = nn.Sequential(
-      nn.Conv2d(1, 64, 4, 2, 1),                # 28x28 -> 14x14
+      nn.Conv2d(in_dim, 64, 4, 2, 1),           # 28x28 -> 14x14
       nn.LeakyReLU(0.1, inplace=True),
       nn.Conv2d(64, 128, 4, 2, 1, bias=False),  # 14x14 -> 7x7
       nn.BatchNorm2d(128),
       nn.LeakyReLU(0.1, inplace=True),
-      nn.Conv2d(128, 1024, 7, bias=False),      # 7x7 -> 1x1
-      nn.BatchNorm2d(1024),
+      nn.Conv2d(128, out_dim, 7, bias=False),      # 7x7 -> 1x1
+      nn.BatchNorm2d(out_dim),
       nn.LeakyReLU(0.1, inplace=True),
     )
 
@@ -26,15 +26,12 @@ class FrontD(nn.Module):
 
 
 class D(nn.Module):
-
-  def __init__(self):
+  def __init__(self, in_dim=1024, out_dim=1):
     super(D, self).__init__()
-    
     self.main = nn.Sequential(
-      nn.Conv2d(1024, 1, 1),
+      nn.Conv2d(in_dim, out_dim, 1),
       nn.Sigmoid()
     )
-    
 
   def forward(self, x):
     output = self.main(x).view(-1, 1)
@@ -42,31 +39,25 @@ class D(nn.Module):
 
 
 class Q(nn.Module):
-
-  def __init__(self):
+  def __init__(self, in_dim=1024, cat_dim=10, num_cont_code=2):
     super(Q, self).__init__()
-
-    self.conv = nn.Conv2d(1024, 128, 1, bias=False)
+    self.conv = nn.Conv2d(in_dim, 128, 1, bias=False)
     self.bn = nn.BatchNorm2d(128)
     self.lReLU = nn.LeakyReLU(0.1, inplace=True)
-    self.conv_disc = nn.Conv2d(128, 10, 1)
-    self.conv_mu = nn.Conv2d(128, 2, 1)
-    self.conv_var = nn.Conv2d(128, 2, 1)
+    self.conv_disc = nn.Conv2d(128, cat_dim, 1)
+    self.conv_mu = nn.Conv2d(128, num_cont_code, 1)
+    self.conv_var = nn.Conv2d(128, num_cont_code, 1)
 
   def forward(self, x):
-
     y = self.lReLU(self.bn(self.conv(x)))
 
     disc_logits = self.conv_disc(y).squeeze()
-
     mu = self.conv_mu(y).squeeze()
     var = self.conv_var(y).squeeze().exp()
-
     return disc_logits, mu, var 
 
 
 class G(nn.Module):
-
   def __init__(self, in_dim, out_dim):
     super(G, self).__init__()
     self.in_dim = in_dim
@@ -80,7 +71,7 @@ class G(nn.Module):
       nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
       nn.BatchNorm2d(64),
       nn.ReLU(True),
-      nn.ConvTranspose2d(64, out_dim, kernel_size=4, stride=2, padding=1, bias=False),
+      nn.ConvTranspose2d(64, out_dim, 4, 2, 1, bias=False),
       nn.Sigmoid()
     )
 
@@ -166,6 +157,7 @@ class Discriminator(nn.Module):
     return x
 
 
+#====== following arch from InfoGAN paper =======
 class OfficialGenerator(nn.Module):
   'Arch from InfoGAN paper.'
   def __init__(self, in_dim=74, out_dim=1):
@@ -326,107 +318,3 @@ class CatG(nn.Module):
     x = self.fc(x).view(-1, 96, 7, 7)
     x = self.deconv(x)
     return x
-
-#============= following arch from ===============
-# https://raw.githubusercontent.com/minlee077/CATGAN-pytorch/master/notebooks/CATGAN.ipynb
-def conv_bn_lrelu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.Sequential(
-    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
-    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
-    nn.LeakyReLU(0.2)
-  )
-def conv_bn_lrelu_drop_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.Sequential(
-    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
-    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
-    nn.LeakyReLU(0.2),
-    nn.Dropout(0.5)
-  )
-def tconv_bn_relu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.Sequential(
-    nn.ConvTranspose2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
-    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
-    nn.ReLU()
-  )
-
-def tconv_bn_lrelu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.Sequential(
-    nn.ConvTranspose2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
-    nn.BatchNorm2d(out_channels,momentum=0.1,eps=1e-5),
-    nn.ReLU()
-  )
-  
-def tconv_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.ConvTranspose2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding)
-
-def conv_lrelu_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.Sequential(
-    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
-    nn.LeakyReLU(0.2)
-  )
-
-def conv_lrelu_drop_layer(in_channels,out_channels,kernel_size,stride=1,padding=0):
-  return nn.Sequential(
-    nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
-    nn.LeakyReLU(0.2)
-  )
-
-def fc_bn_layer(in_features,out_features):
-  return nn.Sequential(
-    nn.Linear(in_features,out_features),
-    nn.BatchNorm1d(out_features)
-  )
-
-def fc_layer(in_features,out_features):
-  return nn.Linear(in_features,out_features)
-
-import math
-def conv_out_size_same(size, stride):
-  return int(math.ceil(float(size) / float(stride)))
-
-s_h, s_w = 28, 28
-s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
-s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
-s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
-gf_dim = 32
-df_dim = 32
-
-class SomeG(nn.Module):
-  def __init__(self, in_dim, out_dim):
-    super(SomeG,self).__init__()
-    self.fc_layer1 = fc_layer(in_dim,s_h8*s_w8*gf_dim*4)
-    self.bn_layer1 = nn.BatchNorm2d(gf_dim*4)#4x4
-    self.up_sample_layer2 = tconv_bn_relu_layer(gf_dim*4,gf_dim*2,3,stride=2,padding=1)#7x7
-    self.up_sample_layer3 = tconv_bn_relu_layer(gf_dim*2,gf_dim,4,stride=2,padding=1)#14x14
-    self.up_sample_layer4 = tconv_layer(gf_dim,out_dim,4,stride=2,padding=1)#28x28
-    self.tanh = nn.Tanh()
-
-
-  def forward(self, x):
-    x = self.fc_layer1(x)
-    x = x.view(-1,gf_dim*4,s_h8,s_w8)
-    x = self.bn_layer1(x)
-    x = self.up_sample_layer2(x)
-    x = self.up_sample_layer3(x)
-    x = self.up_sample_layer4(x)
-    x = self.tanh(x)
-    return x
-
-import torch
-class SomeD(nn.Module):
-  def __init__(self, in_dim, out_dim):
-    super(SomeD,self).__init__()
-    self.down_sample_layer1 = conv_lrelu_layer(in_dim,df_dim,4,stride=2,padding=1)# 14x14
-    self.down_sample_layer2 = conv_bn_lrelu_layer(df_dim,df_dim*2,4,stride=2,padding=1)#7x7
-    self.down_sample_layer3 = conv_bn_lrelu_layer(df_dim*2,df_dim*4,3,stride=2,padding=1)
-    self.fc_layer4 = fc_layer(df_dim*4*s_h8*s_w8,out_dim)
-    self.softmax = nn.Softmax(dim=-1)
-
-  def forward(self, x):
-    x = self.down_sample_layer1(x)
-    x = self.down_sample_layer2(x)
-    x = self.down_sample_layer3(x)
-    x = torch.flatten(x,1)
-    x = self.fc_layer4(x)
-    simplex = self.softmax(x)
-    return simplex, x

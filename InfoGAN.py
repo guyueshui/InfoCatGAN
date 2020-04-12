@@ -49,14 +49,12 @@ class InfoGAN(utils.BaseModel):
     # QcontLoss = nn.MSELoss().to(dv)
     QcontLoss = utils.LogGaussian()
 
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
-      d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.001, betas=(0.5, 0.99)), \
-             optim.Adam(d_step_params, lr=0.0002, betas=(0.5, 0.99)),
+    g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
+    d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
+    g_optim = optim.Adam(g_step_params, lr=1e-3, betas=(0.5, 0.99))
+    d_optim = optim.Adam(d_step_params, lr=2e-4, betas=(0.5, 0.99))
       
-    g_optim, d_optim = _get_optimizer(0)
-    dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=12)
+    dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=4)
     tot_iters = len(dataloader)
 
     # Training...
@@ -85,10 +83,10 @@ class InfoGAN(utils.BaseModel):
         # Guided by https://github.com/soumith/ganhacks#13-add-noise-to-inputs-decay-over-time
         # This may be helpful for generator convergence.
         if self.config.instance_noise:
-          instance_noise = torch.zeros_like(images)
+          instance_noise = torch.zeros_like(image)
           std = -0.1 / tot_iters * num_iter + 0.1
           instance_noise.normal_(0, std)
-          images = images + instance_noise
+          image = image + instance_noise
 
         # Update discriminator.
         d_optim.zero_grad()
@@ -141,8 +139,9 @@ class InfoGAN(utils.BaseModel):
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
 
       if (epoch+1) % 1 == 0:
-        img = self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
+        img = self.generate(self.G, fixed_noise_1, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
+      if (epoch+1) % 25 == 0:
         self.save_model(self.save_dir, epoch+1, *self.models)
 
     # Training finished.
@@ -153,8 +152,8 @@ class InfoGAN(utils.BaseModel):
     print('-'*50)
 
     # Manipulating continuous latent codes.
-    self.generate(fixed_noise_1, 'c1-final.png')
-    self.generate(fixed_noise_2, 'c2-final.png')
+    self.generate(self.G, fixed_noise_1, 'c1-final.png')
+    self.generate(self.G, fixed_noise_2, 'c2-final.png')
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
@@ -167,10 +166,10 @@ class InfoGAN(utils.BaseModel):
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
     import models.mnist as nets
-    self.G = nets.OfficialGenerator(noise_dim, channel)
-    self.FD = nets.OfficialDbody(channel, latent_dim)
-    self.D = nets.OfficialDhead(latent_dim, channel)
-    self.Q = nets.OfficialQ(latent_dim, self.cat_dim, self.num_cont_code)
+    self.G = nets.G(noise_dim, channel)
+    self.FD = nets.FrontD()
+    self.D = nets.D()
+    self.Q = nets.Q()
     networks = [self.G, self.FD, self.D, self.Q]
     for i in networks:
       i.apply(utils.weights_init)
@@ -209,19 +208,19 @@ class InfoGAN(utils.BaseModel):
     
     return fixz.numpy(), one_hot, c1, c2, c3
 
-  def generate(self, noise, fname):
-    'Generate fake images using generator.'
-    self.G.eval()
-    img_path = os.path.join(self.save_dir, fname)
-    from PIL import Image
-    from torchvision.utils import make_grid
-    tensor = self.G(noise)
-    grid = make_grid(tensor, nrow=10, padding=2)
-    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
-    ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-    im = Image.fromarray(ndarr)
-    im.save(img_path)
-    return ndarr
+  #def generate(self, noise, fname):
+  #  'Generate fake images using generator.'
+  #  self.G.eval()
+  #  img_path = os.path.join(self.save_dir, fname)
+  #  from PIL import Image
+  #  from torchvision.utils import make_grid
+  #  tensor = self.G(noise)
+  #  grid = make_grid(tensor, nrow=10, padding=2)
+  #  # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+  #  ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+  #  im = Image.fromarray(ndarr)
+  #  im.save(img_path)
+  #  return ndarr
 
   def raw_classify(self, imgs):
     imgs = imgs.to(self.device)
