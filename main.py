@@ -6,22 +6,32 @@ import matplotlib.pyplot as plt
 plt.style.use('ggplot')
 
 from trainer import Trainer
+from config import get_config
 from utils import weights_init, get_data, ImbalanceSampler
 
 def main(config):
   if config.dataset == 'MNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'FashionMNIST':
     import models.official_mnist as nets
+    config.num_noise_dim == 62
+    config.num_dis_c = 1
 
   elif config.dataset == 'STL10':
     import models.stl10 as nets
     config.num_noise_dim == 256
     config.num_dis_c = 10
-  
-  elif config.dataset == "CIFAR10":
+
+  elif config.dataset == 'CIFAR10':
     import models.cifar10 as nets
+    config.num_noise_dim = 100
+
+  elif config.dataset == 'CIFAR10':
+    import models.cifar10 as nets
+    config.num_noise_dim = 100
 
   elif config.dataset == 'CelebA':
     import models.celeba as nets
@@ -72,7 +82,8 @@ def main(config):
 
   print(config)
   t = Trainer(config, dataset, g, fd, d, q)
-  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(config.cat_prob, true_dist)
+  cat_prob = np.array([0.1]).repeat(10)
+  Glosses, Dlosses, EntQC_given_X, MSEs = t.train(cat_prob)
   
   # Plotting losses...
   plt.figure(figsize=(10, 5))
@@ -93,18 +104,13 @@ def main(config):
   plt.savefig(t._savepath + '/ent_loss.png')
   plt.close('all')
 
-  if config.use_ba:
-    plt.figure(figsize=(10, 5))
-    plt.title('RMSE')
-    plt.plot(MSEs, linewidth=1)
-    plt.savefig(t._savepath + '/rmse.png')
-    plt.close('all')
 
 if __name__ == '__main__':
   ##############################
   # Pre configs.
   ##############################
-  from config import config
+  from config import get_config
+  config = get_config()
   np.set_printoptions(precision=4)
 
   # Fix random seeds.
@@ -115,5 +121,6 @@ if __name__ == '__main__':
   #   initc = np.array([0.147, 0.037, 0.033, 0.143, 0.136, 0.114, 0.057, 0.112, 0.143, 0.078])
   #   initc /= np.sum(initc)
   #   config.cat_prob = initc
+  # CatGAN 可以扩展到非均匀的先验分布，可以试试看，非均匀的半监督分类，效果如何！
 
   main(config)
