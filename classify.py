@@ -74,16 +74,16 @@ class Classifier:
 if __name__ == '__main__':
   from config import get_config
   from CatGAN import CatGAN
+  from InfoCatGAN import InfoCatGAN
 
   args = get_config()
   # Use test dataset.
   dataset = get_data(args.dataset, args.data_root, False)
 
   path = 'results/' + args.dataset
-  path += '/catgan'
-  path += '/model-epoch-100.pt'
+  path += '/CatGAN'
+  path += '/model-epoch-50.pt'
   gan = CatGAN(args, dataset)
-  gan.load_model(path, gan.D)
 
   c = Classifier(gan, path, dataset)
   c.classify()

@@ -1,6 +1,7 @@
 from InfoGAN import InfoGAN
 from SS_InfoGAN import SS_InfoGAN
-from CatGAN import CatGAN as CatGAN
+from CatGAN import CatGAN
+from InfoCatGAN import InfoCatGAN
 from config import get_config
 import utils
 
@@ -8,6 +9,7 @@ import torch
 import numpy as np
 
 def main(config):
+  # Dataset selection.
   if config.dataset == 'CelebA':
     dataset = utils.get_data('CelebA', config.data_root)
     print("This is celeba dataset, " \
@@ -19,12 +21,15 @@ def main(config):
   else:
     raise NotImplementedError('unsupport dataset')
 
+  # Model selection.
   if config.gan_type == "ssinfogan":
     gan = SS_InfoGAN(config, dataset)
   elif config.gan_type == "infogan":
     gan = InfoGAN(config, dataset)
   elif config.gan_type == "catgan":
     gan = CatGAN(config, dataset)
+  elif config.gan_type == "infocatgan":
+    gan = InfoCatGAN(config, dataset)
   else:
     raise NotImplementedError('unsupport gan type')
   gan.train()

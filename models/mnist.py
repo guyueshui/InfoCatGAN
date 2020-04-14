@@ -250,6 +250,37 @@ class OfficialQ(nn.Module):
     return disc_logits, mu, var
 
 
+class OfficialCatD(nn.Module):
+  'Arch from InfoGAN paper.'
+  def __init__(self, in_dim, out_dim):
+    super(OfficialCatD, self).__init__()
+
+    # in_dim x 28 x 28
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4, 2, 1),  # 64 x 14 x 14
+      nn.LeakyReLU(0.2),
+      nn.Conv2d(64, 128, 4, 2, 1),  # 128 x 7 x 7
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.2)
+    )
+
+    self.fc = nn.Sequential(
+      nn.Linear(128*7*7, 1024),
+      nn.BatchNorm1d(1024),
+      nn.LeakyReLU(0.2),
+      nn.Linear(1024, out_dim),
+    )
+
+    self.softmax = nn.Softmax(dim=1) # Each row sums to 1.
+
+  def forward(self, x):
+    x = self.conv(x).view(-1, 128*7*7)
+    logits = self.fc(x)
+    simplex = self.softmax(logits)
+    return simplex, logits
+
+#======== following arch from CatGAN paper? ========
+# but fails to drive training process.
 class CatD(nn.Module):
   "Arch from CatGAN paper."
   def __init__(self, in_dim, out_dim):

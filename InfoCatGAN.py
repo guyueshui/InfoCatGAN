@@ -94,7 +94,7 @@ class InfoCatGAN(utils.BaseModel):
         # Ensure equal usage of fake samples.
         margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
         targets = torch.LongTensor(idx).to(dv)
-        binding_loss = celoss(d_fake_logits, targets) * 2.0
+        binding_loss = celoss(d_fake_logits, targets) * 1.1
 
         g_loss = ent_fake - margin_ent_fake + binding_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
@@ -108,11 +108,13 @@ class InfoCatGAN(utils.BaseModel):
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
       # end of epoch
+      if (epoch+1) % 25 == 0:
+        self.save_model(self.save_dir, epoch+1, *self.models)
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
 
       if (epoch+1) % 1 == 0:
-        img = self.generate(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
+        img = self.generate(self.G, noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
 
     # Training finished.
@@ -132,8 +134,8 @@ class InfoCatGAN(utils.BaseModel):
     # repeat_num = int(np.log2(height)) - 1
     # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim 
-    self.G = nets.Generator(noise_dim, channel)
-    self.D = nets.CatD(channel, self.cat_dim)
+    self.G = nets.OfficialGenerator(noise_dim, channel)
+    self.D = nets.OfficialCatD(channel, self.cat_dim)
     networks = [self.G, self.D]
     for i in networks:
       i.apply(utils.weights_init)
@@ -162,16 +164,23 @@ class InfoCatGAN(utils.BaseModel):
     one_hot[range(100), idx] = 1
     return fixz.numpy(), one_hot
 
-  def generate(self, noise, fname):
-    'Generate fake images using generator.'
-    self.G.eval()
-    img_path = os.path.join(self.save_dir, fname)
-    from PIL import Image
-    from torchvision.utils import make_grid
-    tensor = self.G(noise)
-    grid = make_grid(tensor, nrow=10, padding=2)
-    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
-    ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-    im = Image.fromarray(ndarr)
-    im.save(img_path)
-    return ndarr
+  # def generate(self, noise, fname):
+  #   'Generate fake images using generator.'
+  #   self.G.eval()
+  #   img_path = os.path.join(self.save_dir, fname)
+  #   from PIL import Image
+  #   from torchvision.utils import make_grid
+  #   tensor = self.G(noise)
+  #   grid = make_grid(tensor, nrow=10, padding=2)
+  #   # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+  #   ndarr = grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+  #   im = Image.fromarray(ndarr)
+  #   im.save(img_path)
+  #   return ndarr
+
+  def raw_classify(self, imgs):
+    imgs = imgs.to(self.device)
+    self.D.eval()
+    with torch.no_grad():
+      _, logits = self.D(imgs)
+    return logits.cpu().numpy()
