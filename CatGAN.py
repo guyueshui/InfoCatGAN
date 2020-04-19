@@ -30,6 +30,12 @@ class CatGAN(utils.BaseModel):
     dv = self.device
     # one = torch.FloatTensor([1]).to(dv)
     # mone = one * -1
+    # balance_set = utils.CustomDataset(self.dataset, 200/len(self.dataset))
+    # balance_set.report()
+    # balance_set = balance_set.labeled
+    # loader = DataLoader(balance_set, batch_size=len(balance_set))
+    # train_base, _ = next(iter(loader))
+    # train_base = train_base.to(dv)
     
     def _get_optimizer(lr):
       g_step_params = [{'params': self.G.parameters()}]
@@ -139,7 +145,7 @@ class CatGAN(utils.BaseModel):
       if (epoch+1) % 25 == 0:
         self.save_model(self.save_dir, epoch+1, *self.models)
       # Add FID score...
-      if self.config.fid:
+      if self.config.fid and (epoch+1) == self.config.num_epoch:
         fake_list = []
         real_list = []
         for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
@@ -213,3 +219,180 @@ class CatGAN(utils.BaseModel):
     with torch.no_grad():
       _, logits = self.D(imgs)
     return logits.cpu().numpy()
+
+  def semi_train(self):
+    self.log = {}
+    self.log['d_loss'] = []
+    self.log['g_loss'] = []
+    self.log['fid'] = []
+    generated_images = []
+
+    bs = self.config.batch_size
+    dv = self.device
+    supervised_ratio = 100 / len(self.dataset)
+    celoss = nn.CrossEntropyLoss().to(dv)
+
+    dset = utils.CustomDataset(self.dataset, supervised_ratio)
+    dset.report()
+    labeled_loader = DataLoader(dset.labeled, batch_size=bs, shuffle=True, num_workers=1)
+    labeled_iter = iter(labeled_loader)
+    unlabeled_loader = DataLoader(dset.unlabeled, batch_size=bs, shuffle=True, num_workers=1)
+    unlabeled_iter = iter(unlabeled_loader)
+    
+    def _get_optimizer(lr):
+      g_step_params = [{'params': self.G.parameters()}]
+      d_step_params = [{'params': self.D.parameters()}]
+      return optim.Adam(g_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)), \
+             optim.Adam(d_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)),
+
+    g_optim, d_optim = _get_optimizer(0)
+
+    # Training...
+    print('-'*25)
+    print('Starting Training Loop...\n')
+    print('Epochs: {}\nDataset: {}\nBatch size: {}\nLength of Dataloder: {}'
+          .format(self.config.num_epoch, self.config.dataset, 
+                  self.config.batch_size, None))
+    print('-'*25)
+
+    t0 = utils.ETimer() # train timer
+    t1 = utils.ETimer() # epoch timer
+    supervised_prob = 0.99
+    noise_fixed = torch.randn(100, self.z_dim).to(dv)
+
+    self.D.train()
+    for epoch in range(self.config.num_epoch):
+      # Add FID score...
+      if self.config.fid:
+        imgs_cur_epoch = []
+
+      t1.reset()
+      num_labeled_batch = 0
+      if supervised_prob >= 0.1:
+        tot_iters = 100
+      else:
+        tot_iters = len(labeled_loader) + len(unlabeled_loader)
+
+      self.G.train()
+      for num_iter in range(tot_iters):
+
+        # Update discriminator.
+        d_optim.zero_grad()
+        cur_batch = None
+        # Biased coin toss to decide if we sampling from labeled or unlabeled data.
+        is_labeled_batch = (torch.bernoulli(torch.tensor(supervised_prob)) == 1)
+        try:
+          if is_labeled_batch:
+            cur_batch = next(labeled_iter)
+            num_labeled_batch += 1
+          else:
+            cur_batch = next(unlabeled_iter)
+        except StopIteration:
+          print(num_iter, "restart batch")
+
+        if not cur_batch or cur_batch[0].size(0) != bs:
+          if is_labeled_batch:
+            labeled_iter = iter(labeled_loader)
+            cur_batch = next(labeled_iter)
+          else:
+            unlabeled_iter = iter(unlabeled_loader)
+            cur_batch = next(unlabeled_iter)
+
+        image, y = [e.to(dv) for e in cur_batch]
+
+        # Guided by https://github.com/soumith/ganhacks#13-add-noise-to-inputs-decay-over-time
+        # This may be helpful for generator convergence.
+        if self.config.instance_noise:
+          instance_noise = torch.zeros_like(image)
+          std = -0.1 / tot_iters * num_iter + 0.1
+          instance_noise.normal_(0, std)
+          image = image + instance_noise
+
+        d_real_simplex, real_logits = self.D(image)
+        if is_labeled_batch:
+          bind_loss = celoss(real_logits, y) * 1.1
+        else:
+          bind_loss = 0.0
+        # Minimize entropy to make certain prediction of real sample.
+        ent_real = utils.Entropy(d_real_simplex)
+        # Maximize marginal entropy over real samples to ensure equal usage.
+        margin_ent_real = utils.MarginalEntropy(d_real_simplex)
+
+        noise = torch.randn(bs, self.z_dim).to(dv)
+        fake_image = self.G(noise)
+
+        ## Add instance noise if specified.
+        if self.config.instance_noise:
+          instance_noise.normal_(0, std)  # Regenerate instance noise!
+          fake_image = fake_image + instance_noise
+
+        d_fake_simplex, _ = self.D(fake_image.detach())
+        # Maximize entropy to make uncertain prediction of fake sample.
+        ent_fake = utils.Entropy(d_fake_simplex)
+
+        d_loss = ent_real - margin_ent_real - ent_fake + bind_loss
+        self.log['d_loss'].append(d_loss.cpu().detach().item())
+        d_loss.backward()
+        d_optim.step()
+
+        # Train generator.
+        g_optim.zero_grad()
+        d_fake_simplex, _ = self.D(fake_image)
+        # Fool D to make it believe the fake is real.
+        ent_fake = utils.Entropy(d_fake_simplex)
+        # Ensure equal usage of fake samples.
+        margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
+
+        g_loss = ent_fake - margin_ent_fake
+        self.log['g_loss'].append(g_loss.cpu().detach().item())
+        g_loss.backward()
+        g_optim.step()
+
+        # Add FID score...
+        if self.config.fid:
+          with torch.no_grad():
+            img_tensor = self.G(noise)
+            img_list = [i for i in img_tensor]
+            imgs_cur_epoch.extend(img_list)
+
+        if (num_iter+1) % 100 == 0:
+          print('Epoch: ({:2.0f}/{:2.0f}), Iter: ({:3.0f}/{:3.0f}), Dloss: {:.4f}, Gloss: {:.4f}'
+          .format(epoch+1, self.config.num_epoch, num_iter+1, tot_iters, 
+          d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
+          )
+      # end of epoch
+      if (epoch+1) % 25 == 0:
+        self.save_model(self.save_dir, epoch+1, *self.models)
+      # Add FID score...
+      if self.config.fid and (epoch+1) == self.config.num_epoch:
+        fake_list = []
+        real_list = []
+        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
+          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
+          real_list.append(utils.dup2rgb(self.dataset[i][0]))
+        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        self.log['fid'].append(fid_value)
+        print("-- FID score %.4f" % fid_value)
+
+      # Report epoch training time.
+      epoch_time = t1.elapsed()
+      print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
+      print('labeled batch for Epoch %d: %d/%d' % (epoch+1, num_labeled_batch, tot_iters))
+      if supervised_prob > 0.01:
+        supervised_prob -= 0.1
+      if supervised_prob < 0.01:
+        supervised_prob = 0.01
+
+      if (epoch+1) % 1 == 0:
+        img = self.saveimg(noise_fixed, 'G-epoch-{}.png'.format(epoch+1))
+        generated_images.append(img)
+
+    # Training finished.
+    training_time = t0.elapsed()
+    print('-'*50)
+    print('Traninig finished.\nTotal training time: %.2fm' % (training_time / 60))
+    self.save_model(self.save_dir, self.config.num_epoch, *self.models)
+    print('-'*50)
+
+    utils.generate_animation(self.save_dir, generated_images)
+    utils.plot_loss(self.log, self.save_dir)    

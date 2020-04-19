@@ -303,19 +303,25 @@ class CustomDataset:
     
 
 def MarginalEntropy(y):
-  y1 = torch.autograd.Variable(torch.randn(y.size(1)).type(torch.FloatTensor), requires_grad=True)
-  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
-  y1 = y.mean(0)
-  y2 = -torch.sum(y1 * torch.log(y1 + 1e-6))
-  return y2
+  # y1 = torch.autograd.Variable(torch.randn(y.size(1)).type(torch.FloatTensor), requires_grad=True)
+  # y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  # y1 = y.mean(0)
+  # y2 = -torch.sum(y1 * torch.log(y1 + 1e-6))
+  my = torch.sum(y, 0)
+  my /= torch.sum(my)
+  assert (my >= 0).all(), "invalid simplex value"
+  me = -torch.sum(my * torch.log(my + 1e-6))
+  return me
 
 def Entropy(y):
   bs = y.size(0)
-  y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
-  y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
-  y1 = -y * torch.log(y + 1e-6)
-  y2 = 1.0 / bs * y1.sum()
-  return y2
+  # y1 = torch.autograd.Variable(torch.randn(y.size()).type(torch.FloatTensor), requires_grad=True)
+  # y2 = torch.autograd.Variable(torch.randn(1).type(torch.FloatTensor), requires_grad=True)
+  # y1 = -y * torch.log(y + 1e-6)
+  # y2 = 1.0 / bs * y1.sum()
+  ret = -y * torch.log(y + 1e-6)
+  ret = ret.sum() / bs
+  return ret
 
 def DrawDistribution(dataset, title='Distribution of dataset'):
   'Draw the distribution per label of a given dataset.'
