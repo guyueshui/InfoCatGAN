@@ -166,10 +166,10 @@ class InfoGAN(utils.BaseModel):
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
     import models.mnist as nets
-    self.G = nets.G(noise_dim, channel)
-    self.FD = nets.FrontD()
-    self.D = nets.D()
-    self.Q = nets.Q()
+    self.G = nets.OfficialGenerator(noise_dim, channel)
+    self.FD = nets.OfficialDbody(channel, latent_dim)
+    self.D = nets.OfficialDhead(latent_dim, 1)
+    self.Q = nets.OfficialQ(latent_dim, self.cat_dim, self.num_cont_code)
     networks = [self.G, self.FD, self.D, self.Q]
     for i in networks:
       i.apply(utils.weights_init)
