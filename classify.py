@@ -35,7 +35,7 @@ class Classifier:
     map_to_real = self.get_map_to_real()
 
     num_correct = 0
-    for num_iter, (images, labels) in enumerate(loader):
+    for _, (images, labels) in enumerate(loader):
       predicted = _batch_classify(images, map_to_real)
       with torch.no_grad():
         labels = labels.numpy()
@@ -75,15 +75,19 @@ if __name__ == '__main__':
   from config import get_config
   from CatGAN import CatGAN
   from InfoCatGAN import InfoCatGAN
+  from InfoGAN import InfoGAN
+  from SS_InfoGAN import SS_InfoGAN
 
   args = get_config()
   # Use test dataset.
   dataset = get_data(args.dataset, args.data_root, False)
 
   path = 'results/' + args.dataset
-  path += '/CatGAN'
+  #path += '/re-InfoCatGAN-wfid'
+  #path += '/Semi-CatGAN-wfid'
+  path += '/ssInfoGAN-100label'
   path += '/model-epoch-50.pt'
-  gan = CatGAN(args, dataset)
+  gan = SS_InfoGAN(args, dataset)
 
   c = Classifier(gan, path, dataset)
   c.classify()

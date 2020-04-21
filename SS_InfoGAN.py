@@ -31,7 +31,7 @@ class SS_InfoGAN(utils.BaseModel):
 
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 0.0022
+    supervised_ratio = 132 / len(self.dataset)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim*self.num_disc_code).to(dv)
@@ -188,7 +188,7 @@ class SS_InfoGAN(utils.BaseModel):
           dis_loss = celoss(q_logits, targets) * 1.2
         else:
           dis_loss = celoss(q_logits, targets) * 1.0
-        con_loss = gaussian(cont_c, q_mu, q_var) * 0.1
+        con_loss = gaussian(cont_c, q_mu, q_var) * 0.2
 
         g_loss = reconstruct_loss + dis_loss + con_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
@@ -212,7 +212,7 @@ class SS_InfoGAN(utils.BaseModel):
           )
       
       # Add FID score...
-      if self.config.fid and len(imgs_cur_epoch) > 0:
+      if self.config.fid and (epoch+1) == self.config.num_epoch:
         fake_list = []
         real_list = []
         for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
@@ -232,7 +232,7 @@ class SS_InfoGAN(utils.BaseModel):
         supervised_prob = 0.01
 
       if (epoch+1) % 1 == 0:
-        img = self.generate(self.G, fixed_noise, 'c0-epoch-{}.png'.format(epoch+1))
+        img = self.generate(self.G, fixed_noise_1, 'c0-epoch-{}.png'.format(epoch+1))
         generated_images.append(img)
 
     # Training finished.
@@ -269,7 +269,6 @@ class SS_InfoGAN(utils.BaseModel):
     for i in networks:
       i.apply(utils.weights_init)
       i.to(self.device)
-      utils.print_network(i)
     return networks
 
   def _sample(self, z, disc_c, cont_c, prob=None):
@@ -312,3 +311,10 @@ class SS_InfoGAN(utils.BaseModel):
     plt.savefig(self.save_dir + '/fid.png')
     plt.close('all')
         
+  def raw_classify(self, imgs):
+    imgs = imgs.to(self.device)
+    self.FD.eval()
+    self.Q.eval()
+    with torch.no_grad():
+      logits, _, _ = self.Q( self.FD(imgs) )
+    return logits.cpu().numpy()

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
+from fid import fid_score
 
 class InfoGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -24,6 +25,7 @@ class InfoGAN(utils.BaseModel):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
+    self.log['fid'] = []
     generated_images = []
     
     bs = self.config.batch_size
@@ -54,7 +56,7 @@ class InfoGAN(utils.BaseModel):
     g_optim = optim.Adam(g_step_params, lr=1e-3, betas=(0.5, 0.99))
     d_optim = optim.Adam(d_step_params, lr=2e-4, betas=(0.5, 0.99))
       
-    dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=4)
+    dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=1)
     tot_iters = len(dataloader)
 
     # Training...
@@ -74,6 +76,11 @@ class InfoGAN(utils.BaseModel):
       self.G.train()
       self.Q.train()
       t1.reset()
+
+      # Add FID score...
+      if self.config.fid:
+        imgs_cur_epoch = []
+
       for num_iter, (image, _) in enumerate(dataloader):
         if image.size(0) != bs:
           break
@@ -120,13 +127,20 @@ class InfoGAN(utils.BaseModel):
 
         q_logits, mu, var = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
-        q_loss_disc = QdiscLoss(q_logits, targets) * 0.8
-        q_loss_conc = QcontLoss(cont_c, mu, var) * 0.2
+        q_loss_disc = QdiscLoss(q_logits, targets)
+        q_loss_conc = QcontLoss(cont_c, mu, var) * 0.1
 
         g_loss = reconstruct_loss + q_loss_disc + q_loss_conc
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()
+
+        # Add FID score...
+        if self.config.fid:
+          with torch.no_grad():
+            img_tensor = self.G(noise)
+            img_list = [i for i in img_tensor]
+            imgs_cur_epoch.extend(img_list)
 
         # Print progress...
         if (num_iter+1) % 100 == 0:
@@ -135,6 +149,18 @@ class InfoGAN(utils.BaseModel):
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
       # end of epoch
+
+      # Add FID score...
+      if self.config.fid and (epoch+1) == self.config.num_epoch:
+        fake_list = []
+        real_list = []
+        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
+          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
+          real_list.append(utils.dup2rgb(self.dataset[i][0]))
+        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        self.log['fid'].append(fid_value)
+        print("-- FID score %.4f" % fid_value)
+
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
 
@@ -161,15 +187,13 @@ class InfoGAN(utils.BaseModel):
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    # repeat_num = int(np.log2(height)) - 1
-    # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
     import models.mnist as nets
-    self.G = nets.G(noise_dim, channel)
-    self.FD = nets.FrontD()
-    self.D = nets.D()
-    self.Q = nets.Q()
+    self.G = nets.OfficialGenerator(noise_dim, channel)
+    self.FD = nets.OfficialDbody(channel, latent_dim)
+    self.D = nets.OfficialDhead(latent_dim, 1)
+    self.Q = nets.OfficialQ(latent_dim, self.cat_dim, self.num_cont_code)
     networks = [self.G, self.FD, self.D, self.Q]
     for i in networks:
       i.apply(utils.weights_init)
