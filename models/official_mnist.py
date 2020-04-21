@@ -138,7 +138,7 @@ class D(nn.Module):
   def forward(self, x):
     ut = self.fc(x)
     x = self.sigmoid(ut)
-    return ut, x
+    return x
 
 
 class Q(nn.Module):

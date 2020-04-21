@@ -116,7 +116,7 @@ class InfoCatGAN(utils.BaseModel):
         # Ensure equal usage of fake samples.
         margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
         targets = torch.LongTensor(idx).to(dv)
-        binding_loss = celoss(d_fake_logits, targets) * 1.1
+        binding_loss = celoss(d_fake_logits, targets) * 0.1
 
         g_loss = ent_fake - margin_ent_fake + binding_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())

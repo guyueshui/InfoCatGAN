@@ -75,16 +75,19 @@ if __name__ == '__main__':
   from config import get_config
   from CatGAN import CatGAN
   from InfoCatGAN import InfoCatGAN
+  from InfoGAN import InfoGAN
+  from SS_InfoGAN import SS_InfoGAN
 
   args = get_config()
   # Use test dataset.
   dataset = get_data(args.dataset, args.data_root, False)
 
   path = 'results/' + args.dataset
-  path += '/Semi-InfoCatGAN-wfid'
+  #path += '/re-InfoCatGAN-wfid'
   #path += '/Semi-CatGAN-wfid'
+  path += '/ssInfoGAN-100label'
   path += '/model-epoch-50.pt'
-  gan = InfoCatGAN(args, dataset)
+  gan = SS_InfoGAN(args, dataset)
 
   c = Classifier(gan, path, dataset)
   c.classify()
