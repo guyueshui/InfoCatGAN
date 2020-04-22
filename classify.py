@@ -83,10 +83,10 @@ if __name__ == '__main__':
   dataset = get_data(args.dataset, args.data_root, False)
 
   path = 'results/' + args.dataset
-  #path += '/re-InfoCatGAN-wfid'
-  #path += '/Semi-CatGAN-wfid'
-  path += '/ssInfoGAN-100label'
-  path += '/model-epoch-50.pt'
+  #path += '/InfoCatGAN'
+  #path += '/Semi-CatGAN'
+  path += '/ss-InfoGAN-100labels'
+  path += '/model-epoch-25.pt'
   gan = SS_InfoGAN(args, dataset)
 
   c = Classifier(gan, path, dataset)

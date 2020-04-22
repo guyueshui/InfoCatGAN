@@ -81,7 +81,7 @@ class InfoCatGAN(utils.BaseModel):
         # This may be helpful for generator convergence.
         if self.config.instance_noise:
           instance_noise = torch.zeros_like(image)
-          std = -0.1 / tot_iters * num_iter + 0.1
+          std = -0.1 / tot_iters * num_iter + 0.03
           instance_noise.normal_(0, std)
           image = image + instance_noise
 
