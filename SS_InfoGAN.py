@@ -31,7 +31,7 @@ class SS_InfoGAN(utils.BaseModel):
 
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 132 / len(self.dataset)
+    supervised_ratio = 200 / len(self.dataset)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim*self.num_disc_code).to(dv)
@@ -222,6 +222,9 @@ class SS_InfoGAN(utils.BaseModel):
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
+      if (epoch+1) % 25 == 0:
+        self.save_model(self.save_dir, epoch+1, *self.models)
+
       # Report epoch training time.
       epoch_time = t1.elapsed()
       print('Time taken for Epoch %d: %.2fs' % (epoch+1, epoch_time))
@@ -254,11 +257,9 @@ class SS_InfoGAN(utils.BaseModel):
       self.plot_fid()
 
   def build_model(self):
-    import models.official_mnist as nets
+    import models.mnist as nets
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    # repeat_num = int(np.log2(height)) - 1
-    # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
     latent_dim = 1024 # embedding latent vector dim
     self.G = nets.G(noise_dim, channel)
