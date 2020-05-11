@@ -222,7 +222,7 @@ class InfoCatGAN(utils.BaseModel):
     
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 100 / len(self.dataset)
+    supervised_ratio = 132 / len(self.dataset)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim).to(dv)

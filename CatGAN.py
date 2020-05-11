@@ -229,7 +229,7 @@ class CatGAN(utils.BaseModel):
 
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 200 / len(self.dataset)
+    supervised_ratio = 132 / len(self.dataset)
     celoss = nn.CrossEntropyLoss().to(dv)
 
     dset = utils.CustomDataset(self.dataset, supervised_ratio)
