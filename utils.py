@@ -239,6 +239,15 @@ def get_data(dbname: str, data_root: str, train=True):
     split = 'train' if train else 'test'
     dataset = dsets.STL10(data_root, split=split, transform=transform)
   
+  elif dbname == 'SVHN':
+    transform = transforms.Compose([
+      transforms.Resize(32),
+      transforms.ToTensor(),
+    ])
+
+    split = 'train' if train else 'test'
+    dataset = dsets.SVHN(data_root, split=split, transform=transform, download=True)
+
   else:
     raise NotImplementedError
 

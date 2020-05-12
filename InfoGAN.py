@@ -48,8 +48,8 @@ class InfoGAN(utils.BaseModel):
 
     DLoss = nn.BCELoss().to(dv)
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
-    # QcontLoss = nn.MSELoss().to(dv)
-    QcontLoss = utils.LogGaussian()
+    QcontLoss = nn.MSELoss().to(dv)
+    # QcontLoss = utils.LogGaussian()
 
     g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
     d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
@@ -125,10 +125,10 @@ class InfoGAN(utils.BaseModel):
         labels.fill_(real_label)
         reconstruct_loss = DLoss(d_fake, labels)
 
-        q_logits, mu, var = self.Q(d_body_out)
+        q_logits, cont_logits = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
         q_loss_disc = QdiscLoss(q_logits, targets)
-        q_loss_conc = QcontLoss(cont_c, mu, var) * 0.1
+        q_loss_conc = QcontLoss(cont_c, cont_logits) * 0.1
 
         g_loss = reconstruct_loss + q_loss_disc + q_loss_conc
         self.log['g_loss'].append(g_loss.cpu().detach().item())
@@ -188,12 +188,12 @@ class InfoGAN(utils.BaseModel):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
-    latent_dim = 1024 # embedding latent vector dim
-    import models.mnist as nets
-    self.G = nets.OfficialGenerator(noise_dim, channel)
-    self.FD = nets.OfficialDbody(channel, latent_dim)
-    self.D = nets.OfficialDhead(latent_dim, 1)
-    self.Q = nets.OfficialQ(latent_dim, self.cat_dim, self.num_cont_code)
+    latent_dim = 256 # embedding latent vector dim
+    import models.svhn as nets
+    self.G = nets.Generator(noise_dim, channel)
+    self.FD = nets.Dbody(channel, latent_dim)
+    self.D = nets.Dhead(latent_dim, 1)
+    self.Q = nets.Qhead(latent_dim, self.cat_dim, self.num_cont_code)
     networks = [self.G, self.FD, self.D, self.Q]
     for i in networks:
       i.apply(utils.weights_init)
