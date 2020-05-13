@@ -13,6 +13,7 @@ import matplotlib as mpl
 mpl.use('AGG')
 
 from torchvision.datasets import VisionDataset
+from fid import fid_score
 
 class Noiser:
   'Generate some noise for GAN\'s input.'
@@ -420,3 +421,30 @@ def dup2rgb(single_channel_img):
   'Convert a black-white image to RGB image by duplicate channel 3 times.'
   ret = torch.cat([single_channel_img]*3)
   return ret
+
+def ComputeFID(generated, dataset):
+  """
+  Compute the FID score of the generated image.
+
+  Args:
+  =====
+  generated: list of generated image tensor
+  dataset: the true dataset
+  """
+  fake_list = []
+  real_list = []
+  for i in range(min(len(generated), len(dataset))):
+    num_channel = dataset[0][0].size(0)
+    if num_channel == 1:
+      fakei = dup2rgb(generated[i])
+      reali = dup2rgb(dataset[i][0])
+    elif num_channel == 3:
+      fakei = generated[i]
+      reali = dataset[i][0]
+    else:
+      raise Exception("invalid image channels")
+    fake_list.append(fakei)
+    real_list.append(reali)
+  fid_value = fid_score.calculate_fid_given_img_tensor(
+                fake_list, real_list, 100, True, 2048)
+  return fid_value

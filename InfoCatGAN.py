@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
-from fid import fid_score
 
 class InfoCatGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -140,12 +139,7 @@ class InfoCatGAN(utils.BaseModel):
 
       # Add FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:
-        fake_list = []
-        real_list = []
-        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(utils.dup2rgb(self.dataset[i][0]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        fid_value = utils.ComputeFID(imgs_cur_epoch, self.dataset)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
@@ -369,12 +363,7 @@ class InfoCatGAN(utils.BaseModel):
         self.save_model(self.save_dir, epoch+1, *self.models)
       # Add FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:
-        fake_list = []
-        real_list = []
-        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(utils.dup2rgb(self.dataset[i][0]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        fid_value = utils.ComputeFID(imgs_cur_epoch, self.dataset)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 

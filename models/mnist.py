@@ -349,3 +349,116 @@ class CatG(nn.Module):
     x = self.fc(x).view(-1, 96, 7, 7)
     x = self.deconv(x)
     return x
+
+
+#========= following arch from tripleGAN paper ============
+import torch
+from torch.nn.utils import weight_norm
+
+class GaussianNoise(nn.Module):
+  """Gaussian noise regularizer.
+
+  Args:
+      sigma (float, optional): relative standard deviation used to generate the
+          noise. Relative means that it will be multiplied by the magnitude of
+          the value your are adding the noise to. This means that sigma can be
+          the same regardless of the scale of the vector.
+      is_relative_detach (bool, optional): whether to detach the variable before
+          computing the scale of the noise. If `False` then the scale of the noise
+          won't be seen as a constant but something to optimize: this will bias the
+          network to generate vectors with smaller values.
+  """
+
+  def __init__(self, sigma=0.1, is_relative_detach=True):
+    super().__init__()
+    self.sigma = sigma
+    self.is_relative_detach = is_relative_detach
+    #self.noise = torch.tensor(0).to(device)
+    self.noise = torch.tensor(0)
+
+  def forward(self, x):
+    if self.training and self.sigma != 0:
+      scale = self.sigma * x.detach() if self.is_relative_detach else self.sigma * x
+      sampled_noise = self.noise.repeat(*x.size()).normal_() * scale
+      x = x + sampled_noise
+    return x 
+
+class tg_Generator(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(tg_Generator, self).__init__()
+    self.fc = nn.Sequential(
+      nn.Linear(in_dim, 500),
+      nn.BatchNorm1d(500),
+      nn.Softplus(),
+      nn.Linear(500, 500),
+      nn.BatchNorm1d(500),
+      nn.Softplus(),
+      nn.Linear(500, 28*28),
+      nn.Sigmoid(),
+    )
+
+  def forward(self, x):
+    x = self.fc(x).view(-1, 1, 28, 28)
+    return x
+
+class tg_Discriminator(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(tg_Discriminator, self).__init__()
+    self.fc = nn.Sequential(
+      GaussianNoise(),
+      weight_norm( nn.Linear(in_dim, 1000), name='weight'),
+      nn.LeakyReLU(0.1),
+      GaussianNoise(),
+      weight_norm( nn.Linear(1000, 500), name='weight'),
+      nn.LeakyReLU(0.1),
+      GaussianNoise(),
+      weight_norm( nn.Linear(500, 250), name='weight'),
+      nn.LeakyReLU(0.1),
+      GaussianNoise(),
+      weight_norm( nn.Linear(250, 250), name='weight'),
+      nn.LeakyReLU(0.1),
+      GaussianNoise(),
+      weight_norm( nn.Linear(250, 250), name='weight'),
+      nn.LeakyReLU(0.1),
+      GaussianNoise(),
+      weight_norm( nn.Linear(250, out_dim), name='weight'),
+      nn.Sigmoid(),
+    )
+
+  def forward(self, x):
+    x = self.fc(x)
+    return x
+
+
+class tg_Classifier(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(tg_Classifier, self).__init__()
+    # torch.Size([bs, 1, 28, 28])
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 32, 5), # 32 x 24 x 24
+      nn.BatchNorm2d(32),
+      nn.ReLU(),
+      nn.MaxPool2d(2, 2), # 32 x 12 x 12
+      nn.Dropout2d(0.5),
+
+      nn.Conv2d(32, 64, 3), # 64 x 10 x 10
+      nn.BatchNorm2d(64),
+      nn.ReLU(),
+
+      nn.Conv2d(64, 64, 3), # 64 x 8 x 8
+      nn.BatchNorm2d(64),
+      nn.ReLU(),
+      nn.MaxPool2d(2, 2), # 64 x 4 x 4
+      nn.Dropout2d(0.5),
+
+      nn.Conv2d(64, 128, 3),  # 128 x 2 x 2
+      nn.BatchNorm2d(128),
+      nn.ReLU(),
+
+      nn.Conv2d(128, out_dim, 2),  # 10 x 1 x 1
+      nn.Softmax(dim=1),  # each row sums to 1.
+    )
+
+  def forward(self, x):
+    x = self.conv(x)
+    return x
