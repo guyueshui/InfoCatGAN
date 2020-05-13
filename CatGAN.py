@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
-from fid import fid_score
 
 class CatGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -37,13 +36,8 @@ class CatGAN(utils.BaseModel):
     # train_base, _ = next(iter(loader))
     # train_base = train_base.to(dv)
     
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}]
-      d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)),
-
-    g_optim, d_optim = _get_optimizer(0)
+    g_optim = optim.Adam(self.G.parameters(), lr=2e-4, betas=(0.5, 0.9))
+    d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=4)
     tot_iters = len(dataloader)
 
@@ -109,7 +103,7 @@ class CatGAN(utils.BaseModel):
         # Train generator.
         g_optim.zero_grad()
 
-        # Does noise need to be regenerated?
+        # Does noise need to be regenerated? No!
         # noise = torch.randn(bs, self.z_dim).to(dv)
         # fake_image = self.G(noise)
 
@@ -142,16 +136,12 @@ class CatGAN(utils.BaseModel):
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
       # end of epoch
-      if (epoch+1) % 25 == 0:
+      if (epoch+1) % self.config.save_epoch == 0:
         self.save_model(self.save_dir, epoch+1, *self.models)
-      # Add FID score...
+
+      # Compute FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:
-        fake_list = []
-        real_list = []
-        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(utils.dup2rgb(self.dataset[i][0]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        fid_value = utils.ComputeFID(imgs_cur_epoch, self.dataset)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
@@ -180,9 +170,9 @@ class CatGAN(utils.BaseModel):
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Image must be square."
-    import models.mnist as nets
-    self.G = nets.OfficialGenerator(self.z_dim, channel)
-    self.D = nets.OfficialCatD(channel, self.cat_dim)
+    import models.cifar10 as nets
+    self.G = nets.CatG(self.z_dim, channel)
+    self.D = nets.CatD(channel, self.cat_dim)
     networks = [self.G, self.D]
     for i in networks:
       i.apply(utils.weights_init)
@@ -239,13 +229,8 @@ class CatGAN(utils.BaseModel):
     unlabeled_loader = DataLoader(dset.unlabeled, batch_size=bs, shuffle=True, num_workers=1)
     unlabeled_iter = iter(unlabeled_loader)
     
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}]
-      d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=2e-4, betas=(self.config.beta1, self.config.beta2)),
-
-    g_optim, d_optim = _get_optimizer(0)
+    g_optim = optim.Adam(self.G.parameters(), lr=2e-4, betas=(0.5, 0.9))
+    d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
 
     # Training...
     print('-'*25)
@@ -363,14 +348,10 @@ class CatGAN(utils.BaseModel):
       # end of epoch
       if (epoch+1) % 25 == 0:
         self.save_model(self.save_dir, epoch+1, *self.models)
-      # Add FID score...
+
+      # Compute FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:
-        fake_list = []
-        real_list = []
-        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(utils.dup2rgb(self.dataset[i][0]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        fid_value = utils.ComputeFID(imgs_cur_epoch, self.dataset)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
