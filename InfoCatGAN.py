@@ -38,13 +38,9 @@ class InfoCatGAN(utils.BaseModel):
 
     celoss = nn.CrossEntropyLoss().to(dv)
 
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}]#, {'params': self.D.parameters()}]
-      d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
-      
-    g_optim, d_optim = _get_optimizer(0)
+    g_optim = optim.Adam(self.G.parameters(), lr=1e-3, betas=(0.5, 0.9))
+    d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
+
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=4)
     tot_iters = len(dataloader)
 
@@ -164,14 +160,12 @@ class InfoCatGAN(utils.BaseModel):
     utils.plot_loss(self.log, self.save_dir)    
   
   def build_model(self):
-    import models.mnist as nets
+    import models.cifar10 as nets
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    # repeat_num = int(np.log2(height)) - 1
-    # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim 
-    self.G = nets.OfficialGenerator(noise_dim, channel)
-    self.D = nets.OfficialCatD(channel, self.cat_dim)
+    self.G = nets.CatG(noise_dim, channel)
+    self.D = nets.CatD(channel, self.cat_dim)
     networks = [self.G, self.D]
     for i in networks:
       i.apply(utils.weights_init)
@@ -207,7 +201,7 @@ class InfoCatGAN(utils.BaseModel):
       _, logits = self.D(imgs)
     return logits.cpu().numpy()
 
-  def semi_train(self):
+  def semi_train(self, num_labels=100):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
@@ -216,7 +210,7 @@ class InfoCatGAN(utils.BaseModel):
     
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 132 / len(self.dataset)
+    supervised_ratio = num_labels / len(self.dataset)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim).to(dv)
@@ -227,13 +221,8 @@ class InfoCatGAN(utils.BaseModel):
 
     celoss = nn.CrossEntropyLoss().to(dv)
 
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}]#, {'params': self.D.parameters()}]
-      d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
-      
-    g_optim, d_optim = _get_optimizer(0)
+    g_optim = optim.Adam(self.G.parameters(), lr=1e-3, betas=(0.5, 0.9))
+    d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
 
     dset = utils.CustomDataset(self.dataset, supervised_ratio)
     dset.report()
@@ -359,7 +348,7 @@ class InfoCatGAN(utils.BaseModel):
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
       # end of epoch
-      if (epoch+1) % 25 == 0:
+      if (epoch+1) % self.config.save_epoch == 0:
         self.save_model(self.save_dir, epoch+1, *self.models)
       # Add FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:

@@ -379,7 +379,9 @@ class BaseModel(object):
       raise IndexError('Invalid GPU index')
 
     save_dir = os.path.join(os.getcwd(), 'results', 
-                            config.dataset, config.experiment_tag)
+                            config.dataset, 
+                            config.gan_type,
+                            config.experiment_tag)
     if not os.path.exists(save_dir):
       os.makedirs(save_dir)
     self.save_dir = save_dir
