@@ -95,7 +95,7 @@ class CatGAN(utils.BaseModel):
         # Maximize entropy to make uncertain prediction of fake sample.
         ent_fake = utils.Entropy(d_fake_simplex)
 
-        d_loss = ent_real - margin_ent_real - ent_fake
+        d_loss = ent_real - ent_fake - margin_ent_real
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_loss.backward()
         d_optim.step()
@@ -210,7 +210,7 @@ class CatGAN(utils.BaseModel):
       _, logits = self.D(imgs)
     return logits.cpu().numpy()
 
-  def semi_train(self):
+  def semi_train(self, num_labels=100):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
@@ -219,7 +219,7 @@ class CatGAN(utils.BaseModel):
 
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 132 / len(self.dataset)
+    supervised_ratio = num_labels / len(self.dataset)
     celoss = nn.CrossEntropyLoss().to(dv)
 
     dset = utils.CustomDataset(self.dataset, supervised_ratio)
@@ -315,7 +315,7 @@ class CatGAN(utils.BaseModel):
         # Maximize entropy to make uncertain prediction of fake sample.
         ent_fake = utils.Entropy(d_fake_simplex)
 
-        d_loss = ent_real - margin_ent_real - ent_fake + bind_loss
+        d_loss = ent_real - ent_fake + bind_loss - margin_ent_real
         self.log['d_loss'].append(d_loss.cpu().detach().item())
         d_loss.backward()
         d_optim.step()
