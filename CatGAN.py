@@ -23,6 +23,7 @@ class CatGAN(utils.BaseModel):
     self.log['d_loss'] = []
     self.log['g_loss'] = []
     self.log['fid'] = []
+    self.log['ent'] = []
     generated_images = []
 
     bs = self.config.batch_size
@@ -35,6 +36,9 @@ class CatGAN(utils.BaseModel):
     # loader = DataLoader(balance_set, batch_size=len(balance_set))
     # train_base, _ = next(iter(loader))
     # train_base = train_base.to(dv)
+    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
+    test_loader = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
+    test_iter = iter(test_loader)
     
     g_optim = optim.Adam(self.G.parameters(), lr=2e-4, betas=(0.5, 0.9))
     d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
@@ -123,6 +127,20 @@ class CatGAN(utils.BaseModel):
         g_loss.backward()
         g_optim.step()
 
+        with torch.no_grad():
+          try:
+            test_batch = next(test_iter)
+          except StopIteration as e:
+            #print('>>> EXCEPTION', e)
+            test_iter = iter(test_loader)
+            test_batch = next(test_iter)
+          finally:
+            test_img, _ = test_batch
+            test_img = test_img.to(dv)
+          test_simplex, _ = self.D(test_img)
+          test_ent = utils.Entropy(test_simplex)
+          self.log['ent'].append(test_ent.cpu().detach().item())
+
         # Add FID score...
         if self.config.fid:
           with torch.no_grad():
@@ -162,6 +180,10 @@ class CatGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])
 
     # Add FID score...
     if self.config.fid:
@@ -170,9 +192,9 @@ class CatGAN(utils.BaseModel):
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Image must be square."
-    import models.cifar10 as nets
-    self.G = nets.CatG(self.z_dim, channel)
-    self.D = nets.CatD(channel, self.cat_dim)
+    import models.mnist as nets
+    self.G = nets.OfficialGenerator(self.z_dim, channel)
+    self.D = nets.OfficialCatD(channel, self.cat_dim)
     networks = [self.G, self.D]
     for i in networks:
       i.apply(utils.weights_init)

@@ -158,8 +158,12 @@ class LogGaussian:
   Custom loss for Q network.
   """
   def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
+    assert (var >= 0).all(), "variance < 0 !"
     logli = -0.5 * (var.mul(2*np.pi) + 1e-6).log() - \
             (x-mu).pow(2).div(var.mul(2.0) + 1e-6)
+    if (logli >= 0).any():
+      logli = torch.clamp(logli, max=0.0-1e-6)
+    assert (logli < 0).all(), "log of probability must < 0"
     return logli.sum(1).mean().mul(-1)
 
 

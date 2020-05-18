@@ -43,7 +43,7 @@ def main(config):
   else:
     raise NotImplementedError('unsupport gan type')
   gan.train()
-  #gan.semi_train(400)
+  #gan.semi_train(200)
 
   if config.perform_classification:
     from classify import Classifier

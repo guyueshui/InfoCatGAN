@@ -25,6 +25,7 @@ class InfoGAN(utils.BaseModel):
     self.log['d_loss'] = []
     self.log['g_loss'] = []
     self.log['fid'] = []
+    self.log['ent'] = []
     generated_images = []
     
     bs = self.config.batch_size
@@ -47,8 +48,8 @@ class InfoGAN(utils.BaseModel):
 
     DLoss = nn.BCELoss().to(dv)
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
-    QcontLoss = nn.MSELoss().to(dv)
-    # QcontLoss = utils.LogGaussian()
+    #QcontLoss = nn.MSELoss().to(dv)
+    QcontLoss = utils.LogGaussian()
 
     g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
     d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
@@ -124,10 +125,11 @@ class InfoGAN(utils.BaseModel):
         labels.fill_(real_label)
         reconstruct_loss = DLoss(d_fake, labels)
 
-        q_logits, cont_logits = self.Q(d_body_out)
+        q_logits, mu, var = self.Q(d_body_out)
         targets = torch.LongTensor(idx).to(dv)
         q_loss_disc = QdiscLoss(q_logits, targets)
-        q_loss_conc = QcontLoss(cont_c, cont_logits) * 0.1
+        q_loss_conc = QcontLoss(cont_c, mu, var) * 0.1
+        self.log['ent'].append( (q_loss_disc + q_loss_conc).cpu().detach().item() )
 
         g_loss = reconstruct_loss + q_loss_disc + q_loss_conc
         self.log['g_loss'].append(g_loss.cpu().detach().item())
@@ -171,6 +173,16 @@ class InfoGAN(utils.BaseModel):
     self.save_model(self.save_dir, self.config.num_epoch, *self.models)
     print('-'*50)
 
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])
+    plt.title('MI loss')
+    plt.plot(self.log['ent'])
+    plt.xlabel('Iterations')
+    plt.tight_layout()
+    plt.savefig(self.save_dir + '/ent_loss.pdf')
+
     # Manipulating continuous latent codes.
     self.generate(self.G, fixed_noise_1, 'c1-final.png')
     self.generate(self.G, fixed_noise_2, 'c2-final.png')
@@ -182,12 +194,12 @@ class InfoGAN(utils.BaseModel):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
     noise_dim = self.z_dim + self.cat_dim * self.num_disc_code + self.num_cont_code
-    latent_dim = 256 # embedding latent vector dim
-    import models.svhn as nets
-    self.G = nets.Generator(noise_dim, channel)
-    self.FD = nets.Dbody(channel, latent_dim)
-    self.D = nets.Dhead(latent_dim, 1)
-    self.Q = nets.Qhead(latent_dim, self.cat_dim, self.num_cont_code)
+    latent_dim = 1024 # embedding latent vector dim
+    import models.mnist as nets
+    self.G = nets.OfficialGenerator(noise_dim, channel)
+    self.FD = nets.OfficialDbody(channel, latent_dim)
+    self.D = nets.OfficialDhead(latent_dim, 1)
+    self.Q = nets.OfficialQ(latent_dim, self.cat_dim, self.num_cont_code)
     networks = [self.G, self.FD, self.D, self.Q]
     for i in networks:
       i.apply(utils.weights_init)
@@ -248,16 +260,17 @@ class InfoGAN(utils.BaseModel):
       logits, _, _ = self.Q(self.FD(imgs))
     return logits.cpu().numpy()
 
-  def semi_train(self):
+  def semi_train(self, num_labels=100):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
     self.log['fid'] = []
+    self.log['ent'] = []
     generated_images = []
 
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 200 / len(self.dataset)
+    supervised_ratio = num_labels / len(self.dataset)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim*self.num_disc_code).to(dv)
@@ -415,6 +428,7 @@ class InfoGAN(utils.BaseModel):
         else:
           dis_loss = celoss(q_logits, targets) * 1.0
         con_loss = gaussian(cont_c, q_mu, q_var) * 0.2
+        self.log['ent'].append( (dis_loss + con_loss).cpu().detach().item() )
 
         g_loss = reconstruct_loss + dis_loss + con_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
@@ -472,3 +486,7 @@ class InfoGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])

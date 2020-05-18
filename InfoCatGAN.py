@@ -18,12 +18,26 @@ class InfoCatGAN(utils.BaseModel):
     self.cat_dim = 10
 
     self.models = self.build_model()
+  
+  def _train_common(self):
+    self.log = {}
+    self.log['d_loss'] = []
+    self.log['g_loss'] = []
+    self.log['fid'] = []
+    self.log['ent'] = []
+
+    variables = {}
+    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
+    variables['test_loader'] = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
+    test_iter = iter(test_loader)
+    
 
   def train(self):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
     self.log['fid'] = []
+    self.log['ent'] = []
     generated_images = []
     
     bs = self.config.batch_size
@@ -38,7 +52,13 @@ class InfoCatGAN(utils.BaseModel):
 
     celoss = nn.CrossEntropyLoss().to(dv)
 
-    g_optim = optim.Adam(self.G.parameters(), lr=1e-3, betas=(0.5, 0.9))
+    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
+    test_loader = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
+    #print(len(test_set), len(test_loader))
+    test_iter = iter(test_loader)
+
+    #NOTE: different with CatGAN
+    g_optim = optim.Adam(self.G.parameters(), lr=2e-4, betas=(0.5, 0.9))
     d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
 
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=4)
@@ -111,12 +131,26 @@ class InfoCatGAN(utils.BaseModel):
         # Ensure equal usage of fake samples.
         margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
         targets = torch.LongTensor(idx).to(dv)
-        binding_loss = celoss(d_fake_logits, targets) * 0.03
+        binding_loss = celoss(d_fake_logits, targets) * 0.02
 
         g_loss = ent_fake - margin_ent_fake + binding_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()
+
+        with torch.no_grad():
+          try:
+            test_batch = next(test_iter)
+          except StopIteration as e:
+            #print('>>> EXCEPTION', e)
+            test_iter = iter(test_loader)
+            test_batch = next(test_iter)
+          finally:
+            test_img, _ = test_batch
+            test_img = test_img.to(dv)
+          test_simplex, _ = self.D(test_img)
+          test_ent = utils.Entropy(test_simplex)
+          self.log['ent'].append(test_ent.cpu().detach().item())
 
         # Add FID score...
         if self.config.fid:
@@ -158,14 +192,18 @@ class InfoCatGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])
   
   def build_model(self):
-    import models.cifar10 as nets
+    import models.mnist as nets
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
     noise_dim = self.z_dim + self.cat_dim 
-    self.G = nets.CatG(noise_dim, channel)
-    self.D = nets.CatD(channel, self.cat_dim)
+    self.G = nets.OfficialGenerator(noise_dim, channel)
+    self.D = nets.OfficialCatD(channel, self.cat_dim)
     networks = [self.G, self.D]
     for i in networks:
       i.apply(utils.weights_init)
@@ -211,6 +249,11 @@ class InfoCatGAN(utils.BaseModel):
     bs = self.config.batch_size
     dv = self.device
     supervised_ratio = num_labels / len(self.dataset)
+
+    self.log['ent'] = []
+    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
+    test_loader = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
+    test_iter = iter(test_loader)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim).to(dv)
@@ -265,20 +308,41 @@ class InfoCatGAN(utils.BaseModel):
         cur_batch = None
         # Biased coin toss to decide if we sampling from labeled or unlabeled data.
         is_labeled_batch = (torch.bernoulli(torch.tensor(supervised_prob)) == 1)
-        try:
-          if is_labeled_batch:
-            cur_batch = next(labeled_iter)
-            num_labeled_batch += 1
-          else:
-            cur_batch = next(unlabeled_iter)
-        except StopIteration:
-          print(num_iter, "restart batch")
+        # try:
+        #   if is_labeled_batch:
+        #     cur_batch = next(labeled_iter)
+        #     num_labeled_batch += 1
+        #   else:
+        #     cur_batch = next(unlabeled_iter)
+        # except StopIteration:
+        #   print(num_iter, "restart batch")
 
-        if not cur_batch or cur_batch[0].size(0) != bs:
-          if is_labeled_batch:
+        # if not cur_batch or cur_batch[0].size(0) != bs:
+        #   if is_labeled_batch:
+        #     labeled_iter = iter(labeled_loader)
+        #     cur_batch = next(labeled_iter)
+        #   else:
+        #     unlabeled_iter = iter(unlabeled_loader)
+        #     cur_batch = next(unlabeled_iter)
+
+        if is_labeled_batch:
+          try:
+            cur_batch = next(labeled_iter)
+            if len(cur_batch) != bs:
+              raise StopIteration
+          except StopIteration as e:
+            print(">>> StopIteration on labeled set:", e)
             labeled_iter = iter(labeled_loader)
             cur_batch = next(labeled_iter)
-          else:
+          finally:
+            num_labeled_batch += 1
+        else:
+          try:
+            cur_batch = next(unlabeled_iter)
+            if len(cur_batch) != bs:
+              raise StopIteration
+          except StopIteration as e:
+            print(">>> StopIteration on unlabeled set:", e)
             unlabeled_iter = iter(unlabeled_loader)
             cur_batch = next(unlabeled_iter)
 
@@ -334,6 +398,20 @@ class InfoCatGAN(utils.BaseModel):
         g_loss.backward()
         g_optim.step()
 
+        with torch.no_grad():
+          try:
+            test_batch = next(test_iter)
+          except StopIteration as e:
+            #print('>>> EXCEPTION', e)
+            test_iter = iter(test_loader)
+            test_batch = next(test_iter)
+          finally:
+            test_img, _ = test_batch
+            test_img = test_img.to(dv)
+          test_simplex, _ = self.D(test_img)
+          test_ent = utils.Entropy(test_simplex)
+          self.log['ent'].append(test_ent.cpu().detach().item())
+
         # Add FID score...
         if self.config.fid:
           with torch.no_grad():
@@ -377,3 +455,7 @@ class InfoCatGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])
