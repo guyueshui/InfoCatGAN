@@ -192,9 +192,9 @@ class CatGAN(utils.BaseModel):
   def build_model(self):
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Image must be square."
-    import models.mnist as nets
-    self.G = nets.OfficialGenerator(self.z_dim, channel)
-    self.D = nets.OfficialCatD(channel, self.cat_dim)
+    import models.svhn as nets
+    self.G = nets.Generator(self.z_dim, channel)
+    self.D = nets.CatD(channel, self.cat_dim)
     networks = [self.G, self.D]
     for i in networks:
       i.apply(utils.weights_init)

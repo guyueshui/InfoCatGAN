@@ -87,3 +87,35 @@ class Qhead(nn.Module):
     disc_logits = x[:, :10*self.num_disc_code]
     cont_logits = x[:, 10*self.num_disc_code:]
     return disc_logits, cont_logits
+
+
+class CatD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(CatD, self).__init__()
+
+    # torch.Size([bs, 3, 32, 32])
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4, 2, 1), # 16 x 16
+      nn.LeakyReLU(0.1, True),
+      nn.Conv2d(64, 128, 4, 2, 1),    # 8 x 8
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.1, True),
+      nn.Conv2d(128, 256, 4, 2, 1),   # 4 x 4
+      nn.BatchNorm2d(256),
+      nn.LeakyReLU(0.1, True),
+    )
+    # torch.Size([bs, 256, 4, 4])
+    self.fc = nn.Sequential(
+      nn.Linear(256*4*4, 1024),
+      nn.BatchNorm1d(1024),
+      nn.LeakyReLU(0.1, True),
+      nn.Linear(1024, out_dim),
+    )
+
+    self.softmax = nn.Softmax(dim=1)  # Each row sums to 1.
+
+  def forward(self, x):
+    x = self.conv(x).view(-1, 256*4*4)
+    logits = self.fc(x)
+    simplex = self.softmax(logits)
+    return simplex, logits

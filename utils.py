@@ -272,7 +272,11 @@ class CustomDataset:
     self.num_unlabeled_data = self.num_data - self.num_labeled_data
 
     # Make a uniform labeled subset.
-    num_classes = len(dset.class_to_idx)
+    if isinstance(dset, dsets.SVHN):
+      num_classes = 10
+      dset.targets = dset.labels
+    else:
+      num_classes = len(dset.class_to_idx)
     num_data_per_class = self.num_labeled_data // num_classes
 
     # Construct counter...

@@ -50,6 +50,7 @@ class InfoGAN(utils.BaseModel):
     QdiscLoss = nn.CrossEntropyLoss().to(dv)
     #QcontLoss = nn.MSELoss().to(dv)
     QcontLoss = utils.LogGaussian()
+    mseloss = nn.MSELoss().to(dv)
 
     g_step_params = [{'params': self.G.parameters()}, {'params': self.Q.parameters()}]
     d_step_params = [{'params': self.FD.parameters()}, {'params': self.D.parameters()}]
@@ -97,7 +98,8 @@ class InfoGAN(utils.BaseModel):
 
         # Update discriminator.
         d_optim.zero_grad()
-        d_real = self.D(self.FD(image))
+        fmap_real = self.FD(image)
+        d_real = self.D(fmap_real)
         labels = torch.full_like(d_real, real_label, device=dv)
         d_loss_real = DLoss(d_real, labels)
         d_loss_real.backward()
@@ -131,7 +133,10 @@ class InfoGAN(utils.BaseModel):
         q_loss_conc = QcontLoss(cont_c, mu, var) * 0.1
         self.log['ent'].append( (q_loss_disc + q_loss_conc).cpu().detach().item() )
 
-        g_loss = reconstruct_loss + q_loss_disc + q_loss_conc
+        # feature matching loss
+        fmatch_loss = mseloss(d_body_out, fmap_real.detach())
+
+        g_loss = reconstruct_loss + q_loss_disc + q_loss_conc + fmatch_loss*0.9
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()
@@ -281,6 +286,7 @@ class InfoGAN(utils.BaseModel):
     bceloss = nn.BCELoss().to(dv)
     celoss = nn.CrossEntropyLoss().to(dv)
     gaussian = utils.LogGaussian()
+    mseloss = nn.MSELoss().to(dv)
     
     d_param_group = [
       {'params': self.FD.parameters()},
@@ -430,7 +436,10 @@ class InfoGAN(utils.BaseModel):
         con_loss = gaussian(cont_c, q_mu, q_var) * 0.2
         self.log['ent'].append( (dis_loss + con_loss).cpu().detach().item() )
 
-        g_loss = reconstruct_loss + dis_loss + con_loss
+        # feature matching loss
+        fmatch_loss = mseloss(dbody_out, dbody_out_real.detach())
+
+        g_loss = reconstruct_loss + dis_loss + con_loss + fmatch_loss*1.1
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()

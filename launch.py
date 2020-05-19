@@ -42,8 +42,8 @@ def main(config):
     gan = InfoCatGAN(config, dataset)
   else:
     raise NotImplementedError('unsupport gan type')
-  gan.train()
-  #gan.semi_train(200)
+  #gan.train()
+  gan.semi_train(1000)
 
   if config.perform_classification:
     from classify import Classifier
