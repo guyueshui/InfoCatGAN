@@ -38,13 +38,13 @@ class Dbody(nn.Module):
     # torch.Size([bs, 3, 32, 32])
     self.conv = nn.Sequential(
       nn.Conv2d(in_dim, 64, 4, 2, 1), # 16 x 16
-      nn.LeakyReLU(0.2),
+      nn.LeakyReLU(0.1, True),
       nn.Conv2d(64, 128, 4, 2, 1),    # 8 x 8
       nn.BatchNorm2d(128),
-      nn.LeakyReLU(0.2),
+      nn.LeakyReLU(0.1, True),
       nn.Conv2d(128, out_dim, 4, 2, 1),   # 4 x 4
       nn.BatchNorm2d(out_dim),
-      nn.LeakyReLU(0.2),
+      nn.LeakyReLU(0.1, True),
     )
     # torch.Size([bs, 256, 4, 4])
 
@@ -88,34 +88,62 @@ class Qhead(nn.Module):
     cont_logits = x[:, 10*self.num_disc_code:]
     return disc_logits, cont_logits
 
-
-class CatD(nn.Module):
+#========= following arch is from ==============
+# https://github.com/Natsu6767/InfoGAN-PyTorch/blob/master/models/svhn_model.py
+class Natsu_Generator(nn.Module):
   def __init__(self, in_dim, out_dim):
-    super(CatD, self).__init__()
+    super(Natsu_Generator, self).__init__()
+    self.in_dim = in_dim
+    self.deconv = nn.Sequential(
+      nn.ConvTranspose2d(in_dim, 448, 2, 1, bias=False),
+      nn.BatchNorm2d(448),
+      nn.ReLU(),
 
-    # torch.Size([bs, 3, 32, 32])
-    self.conv = nn.Sequential(
-      nn.Conv2d(in_dim, 64, 4, 2, 1), # 16 x 16
-      nn.LeakyReLU(0.1, True),
-      nn.Conv2d(64, 128, 4, 2, 1),    # 8 x 8
-      nn.BatchNorm2d(128),
-      nn.LeakyReLU(0.1, True),
-      nn.Conv2d(128, 256, 4, 2, 1),   # 4 x 4
+      nn.ConvTranspose2d(448, 256, 4, 2, 1, bias=False),
       nn.BatchNorm2d(256),
-      nn.LeakyReLU(0.1, True),
-    )
-    # torch.Size([bs, 256, 4, 4])
-    self.fc = nn.Sequential(
-      nn.Linear(256*4*4, 1024),
-      nn.BatchNorm1d(1024),
-      nn.LeakyReLU(0.1, True),
-      nn.Linear(1024, out_dim),
-    )
+      nn.ReLU(),
 
-    self.softmax = nn.Softmax(dim=1)  # Each row sums to 1.
+      nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
+      nn.ReLU(),
+      nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
+      nn.ReLU(),
+      nn.ConvTranspose2d(64, 3, 4, 2, 1, bias=False),
+      nn.Tanh(),
+    )
 
   def forward(self, x):
-    x = self.conv(x).view(-1, 256*4*4)
-    logits = self.fc(x)
-    simplex = self.softmax(logits)
-    return simplex, logits
+    x = x.view(-1, self.in_dim, 1, 1)
+    x = self.deconv(x)
+    return x
+
+
+class Natsu_DHead(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(Natsu_DHead, self).__init__()
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 1, 4),
+      nn.Sigmoid(),
+    )
+  def forward(self, x):
+    x = self.conv(x)
+    return x
+
+class Natsu_QHead(nn.Module):
+  def __init__(self, in_dim, disc_dim, conc_dim):
+    super(Natsu_QHead, self).__init__()
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 128, 4, bias=False),
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.1, True)
+    )
+
+    self.conv_disc = nn.Conv2d(128, disc_dim, 1)
+    self.conv_mu = nn.Conv2d(128, conc_dim, 1)
+    self.conv_var = nn.Conv2d(128, conc_dim, 1)
+
+  def forward(self, x):
+    x = self.conv(x)
+    disc_logits = self.conv_disc(x).squeeze()
+    mu = self.conv_mu(x).squeeze()
+    var = self.conv_var(x).squeeze().exp()
+    return disc_logits, mu, var
