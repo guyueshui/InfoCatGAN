@@ -53,9 +53,10 @@ class Classifier:
   def get_map_to_real(self):
     if self.model.config.gan_type == 'ssinfogan':
       return None
-    dset = CustomDataset(self.dataset, 0.01)
+    dset = CustomDataset(self.dataset, 0.1)
     dset.report()
-    labeled_set = torch.utils.data.DataLoader(dset.labeled, batch_size=100)
+    bs = len(dset.labeled) // 100 * 10
+    labeled_set = torch.utils.data.DataLoader(dset.labeled, batch_size=bs)
     abatch = next(iter(labeled_set))
     images, labels = abatch
     logits = self.model.raw_classify(images)

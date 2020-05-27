@@ -20,9 +20,17 @@ def main(config):
     dataset = utils.get_data('FashionMNIST', config.data_root)
   elif config.dataset == 'CIFAR10':
     dataset = utils.get_data('CIFAR10', config.data_root)
+    config.num_noise_dim = 256
+  elif config.dataset == 'SVHN':
+    dataset = utils.get_data('SVHN', config.data_root)
+    # follow infogan settings
+    config.num_dis_c = 1
+    config.num_con_c = 7
+    config.num_noise_dim = 124
   else:
     raise NotImplementedError('unsupport dataset')
 
+  print(config)
   # Model selection.
   if config.gan_type == "ssinfogan":
     gan = SS_InfoGAN(config, dataset)
@@ -34,7 +42,8 @@ def main(config):
     gan = InfoCatGAN(config, dataset)
   else:
     raise NotImplementedError('unsupport gan type')
-  gan.train()
+  #gan.train()
+  gan.semi_train(1000)
 
   if config.perform_classification:
     from classify import Classifier
@@ -46,7 +55,6 @@ def main(config):
 
 if __name__ == '__main__':
   args = get_config()
-  print(args)
   # Fix random seeds.
   np.random.seed(args.seed)
   torch.manual_seed(args.seed)

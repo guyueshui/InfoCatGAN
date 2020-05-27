@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 import utils
-from fid import fid_score
 
 class InfoCatGAN(utils.BaseModel):
   def __init__(self, config, dataset):
@@ -19,12 +18,13 @@ class InfoCatGAN(utils.BaseModel):
     self.cat_dim = 10
 
     self.models = self.build_model()
-
+  
   def train(self):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
     self.log['fid'] = []
+    self.log['ent'] = []
     generated_images = []
     
     bs = self.config.batch_size
@@ -39,13 +39,15 @@ class InfoCatGAN(utils.BaseModel):
 
     celoss = nn.CrossEntropyLoss().to(dv)
 
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}]#, {'params': self.D.parameters()}]
-      d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
-      
-    g_optim, d_optim = _get_optimizer(0)
+    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
+    test_loader = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
+    #print(len(test_set), len(test_loader))
+    test_iter = iter(test_loader)
+
+    #NOTE: different with CatGAN
+    g_optim = optim.Adam(self.G.parameters(), lr=2e-4, betas=(0.5, 0.9))
+    d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
+
     dataloader = DataLoader(self.dataset, batch_size=bs, shuffle=True, num_workers=4)
     tot_iters = len(dataloader)
 
@@ -116,12 +118,26 @@ class InfoCatGAN(utils.BaseModel):
         # Ensure equal usage of fake samples.
         margin_ent_fake = utils.MarginalEntropy(d_fake_simplex)
         targets = torch.LongTensor(idx).to(dv)
-        binding_loss = celoss(d_fake_logits, targets) * 0.03
+        binding_loss = celoss(d_fake_logits, targets) * 0.02
 
         g_loss = ent_fake - margin_ent_fake + binding_loss
         self.log['g_loss'].append(g_loss.cpu().detach().item())
         g_loss.backward()
         g_optim.step()
+
+        with torch.no_grad():
+          try:
+            test_batch = next(test_iter)
+          except StopIteration as e:
+            #print('>>> EXCEPTION', e)
+            test_iter = iter(test_loader)
+            test_batch = next(test_iter)
+          finally:
+            test_img, _ = test_batch
+            test_img = test_img.to(dv)
+          test_simplex, _ = self.D(test_img)
+          test_ent = utils.Entropy(test_simplex)
+          self.log['ent'].append(test_ent.cpu().detach().item())
 
         # Add FID score...
         if self.config.fid:
@@ -140,12 +156,7 @@ class InfoCatGAN(utils.BaseModel):
 
       # Add FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:
-        fake_list = []
-        real_list = []
-        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(utils.dup2rgb(self.dataset[i][0]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        fid_value = utils.ComputeFID(imgs_cur_epoch, self.dataset)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
@@ -168,13 +179,15 @@ class InfoCatGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])
   
   def build_model(self):
     import models.mnist as nets
     channel, height, width = self.dataset[0][0].size()
     assert height == width, "Height and width must equal."
-    # repeat_num = int(np.log2(height)) - 1
-    # hidden_dim = self.config.hidden_dim
     noise_dim = self.z_dim + self.cat_dim 
     self.G = nets.OfficialGenerator(noise_dim, channel)
     self.D = nets.OfficialCatD(channel, self.cat_dim)
@@ -213,7 +226,7 @@ class InfoCatGAN(utils.BaseModel):
       _, logits = self.D(imgs)
     return logits.cpu().numpy()
 
-  def semi_train(self):
+  def semi_train(self, num_labels=100):
     self.log = {}
     self.log['d_loss'] = []
     self.log['g_loss'] = []
@@ -222,7 +235,12 @@ class InfoCatGAN(utils.BaseModel):
     
     bs = self.config.batch_size
     dv = self.device
-    supervised_ratio = 132 / len(self.dataset)
+    supervised_ratio = num_labels / len(self.dataset)
+
+    self.log['ent'] = []
+    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
+    test_loader = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
+    test_iter = iter(test_loader)
 
     z = torch.FloatTensor(bs, self.z_dim).to(dv)
     disc_c = torch.FloatTensor(bs, self.cat_dim).to(dv)
@@ -233,13 +251,8 @@ class InfoCatGAN(utils.BaseModel):
 
     celoss = nn.CrossEntropyLoss().to(dv)
 
-    def _get_optimizer(lr):
-      g_step_params = [{'params': self.G.parameters()}]#, {'params': self.D.parameters()}]
-      d_step_params = [{'params': self.D.parameters()}]
-      return optim.Adam(g_step_params, lr=0.001, betas=(self.config.beta1, self.config.beta2)), \
-             optim.Adam(d_step_params, lr=0.0002, betas=(self.config.beta1, self.config.beta2)),
-      
-    g_optim, d_optim = _get_optimizer(0)
+    g_optim = optim.Adam(self.G.parameters(), lr=1e-3, betas=(0.5, 0.9))
+    d_optim = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.9))
 
     dset = utils.CustomDataset(self.dataset, supervised_ratio)
     dset.report()
@@ -351,6 +364,20 @@ class InfoCatGAN(utils.BaseModel):
         g_loss.backward()
         g_optim.step()
 
+        with torch.no_grad():
+          try:
+            test_batch = next(test_iter)
+          except StopIteration as e:
+            #print('>>> EXCEPTION', e)
+            test_iter = iter(test_loader)
+            test_batch = next(test_iter)
+          finally:
+            test_img, _ = test_batch
+            test_img = test_img.to(dv)
+          test_simplex, _ = self.D(test_img)
+          test_ent = utils.Entropy(test_simplex)
+          self.log['ent'].append(test_ent.cpu().detach().item())
+
         # Add FID score...
         if self.config.fid:
           with torch.no_grad():
@@ -365,16 +392,11 @@ class InfoCatGAN(utils.BaseModel):
           d_loss.cpu().detach().numpy(), g_loss.cpu().detach().numpy())
           )
       # end of epoch
-      if (epoch+1) % 25 == 0:
+      if (epoch+1) % self.config.save_epoch == 0:
         self.save_model(self.save_dir, epoch+1, *self.models)
       # Add FID score...
       if self.config.fid and (epoch+1) == self.config.num_epoch:
-        fake_list = []
-        real_list = []
-        for i in range(min(len(imgs_cur_epoch), len(self.dataset))):
-          fake_list.append(utils.dup2rgb(imgs_cur_epoch[i]))
-          real_list.append(utils.dup2rgb(self.dataset[i][0]))
-        fid_value = fid_score.calculate_fid_given_img_tensor(fake_list, real_list, 100, True, 2048)
+        fid_value = utils.ComputeFID(imgs_cur_epoch, self.dataset)
         self.log['fid'].append(fid_value)
         print("-- FID score %.4f" % fid_value)
 
@@ -399,3 +421,7 @@ class InfoCatGAN(utils.BaseModel):
 
     utils.generate_animation(self.save_dir, generated_images)
     utils.plot_loss(self.log, self.save_dir)    
+    np.savez(self.save_dir + '/numbers.npz',
+             ent=self.log['ent'],
+             g_loss=self.log['g_loss'],
+             d_loss=self.log['d_loss'])

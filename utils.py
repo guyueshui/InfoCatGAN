@@ -13,6 +13,7 @@ import matplotlib as mpl
 mpl.use('AGG')
 
 from torchvision.datasets import VisionDataset
+from fid import fid_score
 
 class Noiser:
   'Generate some noise for GAN\'s input.'
@@ -157,8 +158,12 @@ class LogGaussian:
   Custom loss for Q network.
   """
   def __call__(self, x: torch.Tensor, mu: torch.Tensor, var: torch.Tensor):
+    assert (var >= 0).all(), "variance < 0 !"
     logli = -0.5 * (var.mul(2*np.pi) + 1e-6).log() - \
             (x-mu).pow(2).div(var.mul(2.0) + 1e-6)
+    if (logli >= 0).any():
+      logli = torch.clamp(logli, max=0.0-1e-6)
+    assert (logli < 0).all(), "log of probability must < 0"
     return logli.sum(1).mean().mul(-1)
 
 
@@ -239,6 +244,15 @@ def get_data(dbname: str, data_root: str, train=True):
     split = 'train' if train else 'test'
     dataset = dsets.STL10(data_root, split=split, transform=transform)
   
+  elif dbname == 'SVHN':
+    transform = transforms.Compose([
+      transforms.Resize(32),
+      transforms.ToTensor(),
+    ])
+
+    split = 'train' if train else 'test'
+    dataset = dsets.SVHN(data_root, split=split, transform=transform, download=True)
+
   else:
     raise NotImplementedError
 
@@ -258,7 +272,11 @@ class CustomDataset:
     self.num_unlabeled_data = self.num_data - self.num_labeled_data
 
     # Make a uniform labeled subset.
-    num_classes = len(dset.class_to_idx)
+    if isinstance(dset, dsets.SVHN):
+      num_classes = 10
+      dset.targets = dset.labels
+    else:
+      num_classes = len(dset.class_to_idx)
     num_data_per_class = self.num_labeled_data // num_classes
 
     # Construct counter...
@@ -369,7 +387,9 @@ class BaseModel(object):
       raise IndexError('Invalid GPU index')
 
     save_dir = os.path.join(os.getcwd(), 'results', 
-                            config.dataset, config.experiment_tag)
+                            config.dataset, 
+                            config.gan_type,
+                            config.experiment_tag)
     if not os.path.exists(save_dir):
       os.makedirs(save_dir)
     self.save_dir = save_dir
@@ -411,3 +431,30 @@ def dup2rgb(single_channel_img):
   'Convert a black-white image to RGB image by duplicate channel 3 times.'
   ret = torch.cat([single_channel_img]*3)
   return ret
+
+def ComputeFID(generated, dataset):
+  """
+  Compute the FID score of the generated image.
+
+  Args:
+  =====
+  generated: list of generated image tensor
+  dataset: the true dataset
+  """
+  fake_list = []
+  real_list = []
+  for i in range(min(len(generated), len(dataset))):
+    num_channel = dataset[0][0].size(0)
+    if num_channel == 1:
+      fakei = dup2rgb(generated[i])
+      reali = dup2rgb(dataset[i][0])
+    elif num_channel == 3:
+      fakei = generated[i]
+      reali = dataset[i][0]
+    else:
+      raise Exception("invalid image channels")
+    fake_list.append(fakei)
+    real_list.append(reali)
+  fid_value = fid_score.calculate_fid_given_img_tensor(
+                fake_list, real_list, 100, True, 2048)
+  return fid_value

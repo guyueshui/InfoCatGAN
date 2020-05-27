@@ -232,3 +232,42 @@ class CatD(nn.Module):
     logits = self.main(x).view(-1, self.out_dim)
     simplex = self.softmax(logits)
     return simplex, logits
+
+
+class OfficialCatD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(OfficialCatD, self).__init__()
+    self.out_dim = out_dim
+
+    # torch.Size([bs, 3, 32, 32])
+    self.conv = nn.Sequential(
+      nn.Conv2d(in_dim, 96, 3), # 96 x 30 x 30
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(96, 96, 3), # 96 x 28 x 28
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(96, 96, 5), # 96 x 24 x 24
+      nn.LeakyReLU(0.1),
+      nn.MaxPool2d(2, 2), # 96 x 12 x 12
+      
+      nn.Conv2d(96, 192, 3),  # 192 x 10 x 10
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(192, 192, 3), # 192 x 8 x 8
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(192, 192, 3), # 192 x 6 x 6
+      nn.LeakyReLU(0.1),
+      nn.MaxPool2d(2, 2), # 192 x 3 x 3
+
+      nn.Conv2d(192, 192, 3), # 192 x 1 x 1
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(192, 192, 1),
+      nn.LeakyReLU(0.1),
+      nn.Conv2d(192, out_dim, 1), # out_dim x 1 x 1
+      nn.LeakyReLU(0.2),
+    )
+
+    self.softmax = nn.Softmax(dim=1)  # Each row sums to 1.
+
+  def forward(self, x):
+    logits = self.conv(x).view(-1, self.out_dim)
+    simplex =  self.softmax(logits)
+    return simplex, logits
