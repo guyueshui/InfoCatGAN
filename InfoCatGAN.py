@@ -19,19 +19,6 @@ class InfoCatGAN(utils.BaseModel):
 
     self.models = self.build_model()
   
-  def _train_common(self):
-    self.log = {}
-    self.log['d_loss'] = []
-    self.log['g_loss'] = []
-    self.log['fid'] = []
-    self.log['ent'] = []
-
-    variables = {}
-    test_set = utils.get_data(self.config.dataset, self.config.data_root, train=False)
-    variables['test_loader'] = DataLoader(test_set, batch_size=bs, shuffle=True, num_workers=4)
-    test_iter = iter(test_loader)
-    
-
   def train(self):
     self.log = {}
     self.log['d_loss'] = []
@@ -308,41 +295,20 @@ class InfoCatGAN(utils.BaseModel):
         cur_batch = None
         # Biased coin toss to decide if we sampling from labeled or unlabeled data.
         is_labeled_batch = (torch.bernoulli(torch.tensor(supervised_prob)) == 1)
-        # try:
-        #   if is_labeled_batch:
-        #     cur_batch = next(labeled_iter)
-        #     num_labeled_batch += 1
-        #   else:
-        #     cur_batch = next(unlabeled_iter)
-        # except StopIteration:
-        #   print(num_iter, "restart batch")
-
-        # if not cur_batch or cur_batch[0].size(0) != bs:
-        #   if is_labeled_batch:
-        #     labeled_iter = iter(labeled_loader)
-        #     cur_batch = next(labeled_iter)
-        #   else:
-        #     unlabeled_iter = iter(unlabeled_loader)
-        #     cur_batch = next(unlabeled_iter)
-
-        if is_labeled_batch:
-          try:
+        try:
+          if is_labeled_batch:
             cur_batch = next(labeled_iter)
-            if len(cur_batch) != bs:
-              raise StopIteration
-          except StopIteration as e:
-            print(">>> StopIteration on labeled set:", e)
+            num_labeled_batch += 1
+          else:
+            cur_batch = next(unlabeled_iter)
+        except StopIteration:
+          print(num_iter, "restart batch")
+
+        if not cur_batch or cur_batch[0].size(0) != bs:
+          if is_labeled_batch:
             labeled_iter = iter(labeled_loader)
             cur_batch = next(labeled_iter)
-          finally:
-            num_labeled_batch += 1
-        else:
-          try:
-            cur_batch = next(unlabeled_iter)
-            if len(cur_batch) != bs:
-              raise StopIteration
-          except StopIteration as e:
-            print(">>> StopIteration on unlabeled set:", e)
+          else:
             unlabeled_iter = iter(unlabeled_loader)
             cur_batch = next(unlabeled_iter)
 
