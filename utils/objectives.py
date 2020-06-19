@@ -19,8 +19,14 @@ def CategoricalCrossentropy(predictions, targets_dist, epsilon=1e-6):
 def Entropy(distribution, epsilon=1e-6):
     return CategoricalCrossentropy(distribution, distribution, epsilon)
 
+def MarginalEntropy(distribution, epsilon=1e-6):
+    assert distribution.dim() == 2, "undesired input shape"
+    dist = distribution.mean(dim=0)
+    dist = dist / dist.sum()
+    return Entropy(dist, epsilon)
 
 def CategoricalCrossentropyOfMean(predictions):
+    # not use it
     nclass = predictions.size(1)
     uniform_targets = torch.ones(1, nclass, device=predictions.device) / nclass
     pred = predictions.mean(dim=0)

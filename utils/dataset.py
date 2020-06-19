@@ -42,9 +42,7 @@ def GetData(dbname, data_root, train=True):
     "Get dataset from data root."
     
     if dbname == 'MNIST':
-        trans = transforms.Compose([
-            transforms.ToTensor()
-        ])
+        trans = transforms.ToTensor()
         dataset = dsets.MNIST(data_root, train=train, transform=trans, download=True)
 
     elif dbname == 'SVHN':

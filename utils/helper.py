@@ -20,7 +20,7 @@ class BaseModel(object):
         else:
             raise IndexError('Invalid GPU index')
 
-        save_dir = 'results/' + config.dbname
+        save_dir = os.path.join('results', config.dbname, self.__class__.__name__)
         save_dir += '.nlabeled' + str(config.nlabeled)
         save_dir += '.seed' + str(config.seed)
         save_dir += '.' + t.strftime("%m%d-%H:%M")
