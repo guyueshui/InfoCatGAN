@@ -47,9 +47,34 @@ def CategoricalCrossentropyUslSeparated(predictions, alpha=.3, alpha_average=1e-
 def CategoricalAccuracy(predictions, targets, map_to_real=None):
     predictions = predictions.squeeze().cpu().detach().numpy()
     targets = targets.squeeze().detach().cpu().detach().numpy()
-    assert predictions.ndim == 2, "undesired input shape"
-    pred = np.argmax(predictions, axis=-1)
+    if predictions.ndim == 2:
+        pred = np.argmax(predictions, axis=-1)
+    elif predictions.ndim == 1:
+        pred = predictions
+    else:
+        raise ValueError("undesired input shape")
     if map_to_real is not None:
         pred = map_to_real[pred]
     acc = np.equal(pred, targets).mean()
     return acc
+
+def CategoryMatching(predictions, targets, num_class):
+    predictions = predictions.detach().cpu().squeeze().numpy()
+    targets = targets.detach().cpu().squeeze().numpy()
+    assert predictions.shape == targets.shape
+    mat = np.zeros((num_class, num_class), dtype=int)
+    for i in range(len(targets)):
+        mat[predictions[i], targets[i]] += 1
+    print(mat)
+    map_to_real = np.argmax(mat, axis=1)
+    print('map_to_real is', map_to_real)
+    return map_to_real
+
+def LogGaussian(x, mu, var, epsilon=1e-6):
+    logli = -0.5 * (var.mul(2*np.pi) + epsilon).log() - \
+            (x-mu).pow(2).div(var.mul(2.0) + epsilon)
+    if (logli >= 0).any():
+        logli = torch.clamp(logli, max=0-epsilon)
+    assert (logli < 0).all(), "log of probability must < 0"
+    return logli.sum(1).mean().mul(-1)
+

@@ -17,13 +17,16 @@ def DrawLabeled(dataset, num_labeled, report=False):
         num_class = len(dset.class_to_idx)
     num_data_per_class = num_labeled // num_class
     
-    data = []
-    targets = []
-    for j in range(num_class):
-        data.append(dset.data[dset.targets == j][:num_data_per_class])
-        targets.append(dset.targets[dset.targets == j][:num_data_per_class])
-    dset.data = torch.cat(data, dim=0)
-    dset.targets = torch.cat(targets, dim=0)
+    counter = [num_data_per_class for i in range(num_class)]
+    idx_to_draw = []
+    for i, label in enumerate(dset.targets):
+        if counter[label] > 0:
+            idx_to_draw.append(i)
+            counter[label] -= 1
+    mask = np.zeros(len(dset), dtype=bool)
+    mask[idx_to_draw] = True
+    dset.data = dset.data[mask]
+    dset.targets = np.asarray(dset.targets)[mask].tolist()
 
     if report:
         _, counts = np.unique(dset.targets, return_counts=True)
@@ -40,8 +43,6 @@ def GetData(dbname, data_root, train=True):
     
     if dbname == 'MNIST':
         trans = transforms.Compose([
-            transforms.Resize(28),
-            transforms.CenterCrop(28),
             transforms.ToTensor()
         ])
         dataset = dsets.MNIST(data_root, train=train, transform=trans, download=True)
@@ -53,7 +54,13 @@ def GetData(dbname, data_root, train=True):
             transforms.ToTensor()
         ])
         split = 'train' if train else 'test'
-        dataset = dsets.SVHN(dataset, split=split, transform=trans, download=True)
+        dataset = dsets.SVHN(data_root, split=split, transform=trans, download=True)
+    
+    elif dbname == 'CIFAR10':
+        trans = transforms.Compose([
+            transforms.ToTensor(),
+        ])
+        dataset = dsets.CIFAR10(data_root, train=train, transform=trans, download=True)
     
     else:
         raise NotImplementedError

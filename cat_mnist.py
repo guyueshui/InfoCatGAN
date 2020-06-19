@@ -12,8 +12,13 @@ load general configs, custom config should go here, once ARGS
 passed to the gan object, it can not be changed
 """
 ARGS = GetConfig()
-ARGS.dbname = 'MNIST'
-ARGS.nlabeled = 0
+if ARGS.dbname == 'MNIST':
+    ARGS.nlabeled = 100
+elif ARGS.dbname == 'CIFAR10':
+    ARGS.nlabeled = 4000
+elif ARGS.dbname == 'SVHN':
+    ARGS.nlabeled = 4000
+
 ARGS.num_epoch = 1000
 if ARGS.seed == -1:
     ARGS.seed = int(time.time())
@@ -22,6 +27,7 @@ np.random.seed(ARGS.seed)
 np.set_printoptions(precision=4)
 torch.manual_seed(ARGS.seed)
 torch.set_default_tensor_type(torch.FloatTensor)
+#torch.cuda.empty_cache()
 
 
 class CatGAN(utils.BaseModel):
@@ -31,6 +37,11 @@ class CatGAN(utils.BaseModel):
         self.z_dim = 128
         self.train_set = utils.GetData(config.dbname, config.data_root, train=True)
         self.test_set = utils.GetData(config.dbname, config.data_root, train=False)
+        print("-- dataset info")
+        print(self.train_set)
+        print(self.test_set)
+        self.log2file(self.train_set.__repr__())
+        self.log2file(self.test_set.__repr__())
 
         self.log = {}
         self.log['d_loss'] = []
@@ -61,22 +72,7 @@ class CatGAN(utils.BaseModel):
         tot_timer = utils.ETimer()
         epoch_timer = utils.ETimer()
 
-        testloader = DataLoader(self.test_set, batch_size=len(self.test_set), num_workers=4)
-        test_x, test_y = [e.to(dv) for e in next(iter(testloader))]
-        def __get_map_to_real():
-            with torch.no_grad():
-                yk = self.D(test_x).argmax(dim=1).view(-1)
-                yk = yk.detach().cpu().numpy()
-                labels = test_y.detach().cpu().numpy()
-                assert len(yk) == len(labels)
-                mat = np.zeros((self.nclass, self.nclass), dtype=int)
-                for i in range(len(yk)):
-                    mat[yk[i], labels[i]] += 1
-                print(mat)
-                map_to_real = np.argmax(mat, axis=1)
-                print('map_to_real is', map_to_real)
-                return map_to_real
-
+        testloader = DataLoader(self.test_set, batch_size=100, num_workers=4)
         fix_noise = torch.randn(100, self.z_dim, device=dv)
 
         """
@@ -142,14 +138,10 @@ class CatGAN(utils.BaseModel):
                     vutils.save_image(image_gen, self.save_dir + '/fake-epoch-{}.png'.format(epoch), nrow=10)
             
             if epoch % 1 == 0:
-                with torch.no_grad():
-                    prediction = self.D(test_x)
-                    map_to_real = __get_map_to_real()
-                    # NOTE: category matching here.
-                    acc = utils.CategoricalAccuracy(prediction, test_y, map_to_real)
-                    line = "AccEval=%.5f" % acc
-                    print(line)
-                    self.log2file(line)
+                acc = self.evaluate(testloader, True)
+                line = "AccEval=%.5f" % acc
+                print(line)
+                self.log2file(line)
 
         # Training finished.
         print('-'*50)
@@ -168,21 +160,21 @@ class CatGAN(utils.BaseModel):
         lr_anneal_epoch = 300
         lr_anneal_every_epoch = 1
         alpha_decay = 1e-4
+        alpha_ent = 0.3
+        alpha_avg = 1e-3
         eval_epoch = 5
-        vis_epoch = 10
+        vis_epoch = 2
 
         tot_timer = utils.ETimer()
         epoch_timer = utils.ETimer()
 
-        testloader = DataLoader(self.test_set, batch_size=len(self.test_set), num_workers=4)
-        test_x, test_y = [e.to(dv) for e in next(iter(testloader))]
-
+        testloader = DataLoader(self.test_set, batch_size=100, num_workers=4)
         fix_noise = torch.randn(100, self.z_dim, device=dv)
 
         """
         pretrain D
         """
-        pre_nepoch = 30
+        pre_nepoch = 0 if num_labeled > 100 else 30
         pre_batch_size_l = min(num_labeled, 100)
         pre_batch_size_u = 500
         pre_lr = 3e-4
@@ -211,12 +203,10 @@ class CatGAN(utils.BaseModel):
                 d_cost.backward()
                 d_optim.step()
                 
-            with torch.no_grad():
-                prediction = self.D(test_x)
-                acc = utils.CategoricalAccuracy(prediction, test_y)
-                line = "-- Pretrained acc at epoch %d: %.5f" % (epoch, acc)
-                print(line)
-                self.log2file(line)
+            acc = self.evaluate(testloader)
+            line = "-- Pretrained acc at epoch %d: %.5f" % (epoch, acc)
+            print(line)
+            self.log2file(line)
 
             
 
@@ -262,9 +252,11 @@ class CatGAN(utils.BaseModel):
                 
                 if is_labeled_batch:
                     d_out_l = self.D(lx)
-                    d_cost_real = utils.CategoricalCrossentropySslSeparated(d_out_l, ly, d_out_u)
+                    d_cost_real = utils.CategoricalCrossentropySslSeparated(
+                        d_out_l, ly, d_out_u, 1, alpha_ent, alpha_avg)
                 else:
-                    d_cost_real = utils.CategoricalCrossentropyUslSeparated(d_out_u)
+                    d_cost_real = utils.CategoricalCrossentropyUslSeparated(
+                        d_out_u, alpha_ent, alpha_avg)
                 
                 noise = torch.randn(batch_size_u, self.z_dim, device=dv)
                 fx = self.G(noise)
@@ -279,7 +271,7 @@ class CatGAN(utils.BaseModel):
                 # Update G.
                 g_optim.zero_grad()
                 d_out_f = self.D(fx)
-                g_cost = utils.CategoricalCrossentropyUslSeparated(d_out_f)
+                g_cost = utils.CategoricalCrossentropyUslSeparated(d_out_f, alpha_ent, alpha_avg)
                 self.log['g_loss'].append(g_cost.detach().cpu().item())
                 g_cost.backward()
                 g_optim.step()
@@ -305,12 +297,10 @@ class CatGAN(utils.BaseModel):
                     vutils.save_image(image_gen, self.save_dir + '/fake-epoch-{}.png'.format(epoch), nrow=10)
             
             if epoch % eval_epoch == 0:
-                with torch.no_grad():
-                    prediction = self.D(test_x)
-                    acc = utils.CategoricalAccuracy(prediction, test_y)
-                    line = "AccEval=%.5f" % acc
-                    print(line)
-                    self.log2file(line)
+                acc = self.evaluate(testloader)
+                line = "AccEval=%.5f" % acc
+                print(line)
+                self.log2file(line)
 
         # Training finished.
         print('-'*50)
@@ -322,15 +312,42 @@ class CatGAN(utils.BaseModel):
 
     def build_model(self):
         nchannel = self.train_set[0][0].size(0)
-        import models.mnist as nets
-        self.G = nets.G(self.z_dim, nchannel)
+        if self.config.dbname == 'MNIST':
+            import models.mnist as nets
+        elif self.config.dbname == 'CIFAR10':
+            import models.cifar10 as nets
+        elif self.config.dbname == 'SVHN':
+            import models.cifar10 as nets
+
+        self.G = nets.DCGAN_G(self.z_dim, nchannel)
         # self.G = nets.OfficialGenerator(self.z_dim, nchannel)
-        self.D = nets.D(nchannel, self.nclass)
+        self.D = nets.DCGAN_D(nchannel, self.nclass)
         networks = [self.G, self.D]
         for i in networks:
             i.apply(utils.WeightInit)
             i.to(self.device)
         return networks
+    
+    def evaluate(self, testloader, need_map=False):
+        preds = []
+        targets = []
+        for tx, ty in testloader:
+            tx = tx.to(self.device)
+            with torch.no_grad():
+                pred = self.D(tx).argmax(axis=1).view(-1)
+                preds.append(pred)
+                targets.append(ty)
+        preds = torch.cat(preds, axis=-1)
+        targets = torch.cat(targets, axis=-1)
+        if need_map:
+            map_to_real = utils.CategoryMatching(preds, targets, self.nclass)
+        else:
+            map_to_real = None
+        acc = utils.CategoricalAccuracy(preds, targets, map_to_real)
+        return acc
+        
+        
+
 
 if __name__ == '__main__':
     gan = CatGAN(ARGS)

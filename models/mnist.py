@@ -1,7 +1,5 @@
-import torch
-import torch.nn as nn
-from torch.nn.utils import weight_norm
 from . import *
+from torch.nn.utils import weight_norm
 
 class Classifier(nn.Module):
     def __init__(self, in_dim, out_dim):
@@ -213,12 +211,11 @@ class G(nn.Module):
         return x
 
 
-#============== the following arch from InfoGAN paper ===========
 #====== following arch from InfoGAN paper =======
-class OfficialGenerator(nn.Module):
+class InfoGAN_G(nn.Module):
   'Arch from InfoGAN paper.'
   def __init__(self, in_dim=74, out_dim=1):
-      super(OfficialGenerator, self).__init__()
+      super(InfoGAN_G, self).__init__()
 
       # bs x input_dim
       self.fc = nn.Sequential(
@@ -244,3 +241,46 @@ class OfficialGenerator(nn.Module):
       x = self.fc(x).view(-1, 128, 7, 7)
       x = self.deconv(x)
       return x
+
+class InfoGAN_D(nn.Module):
+    def __init__(self, in_dim, out_dim, nclass, nconcode):
+        super(InfoGAN_D, self).__init__()
+        # in_dim x 28 x 28
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_dim, 64, 4, 2, 1),  # 64 x 14 x 14
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(64, 128, 4, 2, 1),  # 128 x 7 x 7
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2)
+        )
+
+        self.fc = nn.Sequential(
+            nn.Linear(128*7*7, 1024),
+            nn.BatchNorm1d(1024),
+            nn.LeakyReLU(0.2)
+        )
+
+        self.d = nn.Sequential(
+            nn.Linear(1024, 1),
+            nn.Sigmoid(),
+        )
+
+        self.q = nn.Sequential(
+            nn.Linear(1024, 128),
+            nn.BatchNorm1d(128),
+            nn.LeakyReLU(0.2),
+        )
+
+        self.qdis = nn.Linear(128, nclass)
+        self.qmu = nn.Linear(128, nconcode)
+        self.qvar = nn.Linear(128, nconcode)
+    
+    def forward(self, x):
+        x = self.conv(x).view(-1, 128*7*7)
+        x = self.fc(x)
+        prob = self.d(x)
+        qstuff = self.q(x)
+        dis_logits = self.qdis(qstuff)
+        qmu = self.qmu(qstuff)
+        qvar = self.qvar(qstuff).exp()
+        return prob, dis_logits, (qmu, qvar)
