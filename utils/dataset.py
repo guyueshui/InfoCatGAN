@@ -49,7 +49,8 @@ def GetData(dbname, data_root, train=True):
         trans = transforms.Compose([
             transforms.Resize(37),
             transforms.CenterCrop(32),
-            transforms.ToTensor()
+            transforms.ToTensor(),
+            transforms.Normalize([.5,.5,.5], [.5,.5,.5])
         ])
         split = 'train' if train else 'test'
         dataset = dsets.SVHN(data_root, split=split, transform=trans, download=True)
@@ -57,6 +58,7 @@ def GetData(dbname, data_root, train=True):
     elif dbname == 'CIFAR10':
         trans = transforms.Compose([
             transforms.ToTensor(),
+            transforms.Normalize([.5,.5,.5], [.5,.5,.5])
         ])
         dataset = dsets.CIFAR10(data_root, train=train, transform=trans, download=True)
     

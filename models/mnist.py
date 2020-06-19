@@ -178,9 +178,9 @@ class G(nn.Module):
         super(G, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(in_dim, 8*8*96),
-            nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(8*8*96),
             GaussianNoiseLayer(0.3),
+            nn.LeakyReLU(0.1, inplace=True),
         )
 
         # 96 x 8 x 8
@@ -189,17 +189,17 @@ class G(nn.Module):
             nn.Conv2d(96, 96, 3, 1, 1),
 
             nn.Conv2d(96, 64, 5, 1, 1), # 16->14
-            nn.LeakyReLU(0.1, True),
             nn.BatchNorm2d(64),
             GaussianNoiseLayer(0.3),
+            nn.LeakyReLU(0.1, True),
 
             PerforatedUpsample(), # 14->28
             nn.Conv2d(64, 64, 3, 1, 1),
 
             nn.Conv2d(64, 64, 5, 1, 2),
-            nn.LeakyReLU(0.1, True),
             nn.BatchNorm2d(64),
             GaussianNoiseLayer(0.3),
+            nn.LeakyReLU(0.1, True),
 
             nn.Conv2d(64, out_dim, 5, 1, 2),
             nn.Sigmoid()

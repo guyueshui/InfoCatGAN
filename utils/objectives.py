@@ -2,14 +2,14 @@ import numpy as np
 import torch
 import torch.nn.functional as F 
 
-def CategoricalCrossentropy(predictions, targets_dist, epsilon=1e-6):
-    predictions = predictions.squeeze()
-    targets_dist = targets_dist.squeeze()
-    assert predictions.size() == targets_dist.size(), "input shape mismatch"
-    ce = -predictions*torch.log(targets_dist + epsilon)
-    if predictions.dim() == 2:
+def CategoricalCrossentropy(dist, true_dist, epsilon=1e-6):
+    dist = dist.squeeze()
+    true_dist = true_dist.squeeze()
+    assert dist.size() == true_dist.size(), "input shape mismatch"
+    ce = -true_dist*torch.log(dist + epsilon)
+    if dist.dim() == 2:
         ce = ce.sum(dim=1).mean()
-    elif predictions.dim() == 1:
+    elif dist.dim() == 1:
         ce = ce.sum()
     else:
         raise NotImplementedError

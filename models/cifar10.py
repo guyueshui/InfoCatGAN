@@ -120,10 +120,13 @@ class G(nn.Module):
 # https://github.com/AlexiaJM/Deep-learning-with-cats/blob/master/Generating%20cats/DCGAN.py
 
 class DCGAN_G(nn.Module):
-    def __init__(self, in_dim, out_dim):
+    def __init__(self, in_dim:int, out_shape:tuple):
         super(DCGAN_G, self).__init__()
-        mult = 32 // 8
+        out_dim, h, w = out_shape
+        assert h == w
+        mult = h // 8
         G_h_size = 128
+
         layers = [ReshapeLayer((-1, in_dim, 1, 1))]
         layers += [
             nn.ConvTranspose2d(in_dim, mult*G_h_size, 4, bias=False),
@@ -148,18 +151,19 @@ class DCGAN_G(nn.Module):
 
 
 class DCGAN_D(nn.Module):
-    def __init__(self, in_dim, out_dim):
+    def __init__(self, in_shape:tuple, out_dim:int):
         super(DCGAN_D, self).__init__()
+        in_dim, h, w = in_shape
         self.out_dim = out_dim
+        assert h == w
         D_h_size = 128
-        image_size = 32
 
         layers = []
         layers += [
             nn.Conv2d(in_dim, D_h_size, 4,2,1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
         ]
-        image_size_new = image_size // 2
+        image_size_new = h // 2
         mult = 1
         while image_size_new > 4:
             layers += [
@@ -171,12 +175,11 @@ class DCGAN_D(nn.Module):
             mult *= 2
         layers += [
             nn.Conv2d(D_h_size*mult, out_dim, 4,1,0, bias=False),
+            nn.Sigmoid()
         ]
         self.conv = nn.Sequential(*layers)
         self.softmax = nn.Softmax(dim=1)
     
     def forward(self, x):
-        x = self.conv(x)
-        x = x.view(-1, self.out_dim)
-        x = self.softmax(x)
+        x = self.conv(x).squeeze()
         return x

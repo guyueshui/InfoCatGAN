@@ -19,7 +19,7 @@ elif ARGS.dbname == 'CIFAR10':
 elif ARGS.dbname == 'SVHN':
     ARGS.nlabeled = 4000
 
-ARGS.num_epoch = 1000
+ARGS.num_epoch = 500
 if ARGS.seed == -1:
     ARGS.seed = int(time.time())
 
@@ -163,7 +163,7 @@ class CatGAN(utils.BaseModel):
         alpha_ent = 0.3
         alpha_avg = 1e-3
         eval_epoch = 5
-        vis_epoch = 2
+        vis_epoch = 5
 
         tot_timer = utils.ETimer()
         epoch_timer = utils.ETimer()
@@ -174,7 +174,7 @@ class CatGAN(utils.BaseModel):
         """
         pretrain D
         """
-        pre_nepoch = 0 if num_labeled > 100 else 30
+        pre_nepoch = 0 if num_labeled > 100 else 0
         pre_batch_size_l = min(num_labeled, 100)
         pre_batch_size_u = 500
         pre_lr = 3e-4
@@ -231,6 +231,8 @@ class CatGAN(utils.BaseModel):
             uloader = DataLoader(self.train_set, batch_size=batch_size_u, shuffle=True, num_workers=4, drop_last=True)
             lloader = DataLoader(labeled_set, batch_size=batch_size_l, shuffle=True, drop_last=True)
             liter = iter(lloader)
+            dl = np.zeros(3)
+            gl = np.zeros(1)
             for num_iter, (ux, _) in enumerate(uloader, 1):
                 # Prepare data.
                 ux = ux.to(dv)
@@ -263,8 +265,12 @@ class CatGAN(utils.BaseModel):
                 d_out_f = self.D(fx.detach())
                 d_cost_fake = utils.Entropy(d_out_f)
 
-                d_cost = d_cost_real - .3*d_cost_fake
-                self.log['d_loss'].append(d_cost.detach().cpu().item())
+                d_cost = d_cost_real - alpha_ent*d_cost_fake
+                d_cost_list = [d_cost, d_cost_real, d_cost_fake]
+                d_cost_list = [e.detach().cpu().item() for e in d_cost_list]
+                for j in range(len(d_cost_list)):
+                    dl[j] += d_cost_list[j]
+                self.log['d_loss'].append(d_cost_list[0])
                 d_cost.backward()
                 d_optim.step()
 
@@ -272,21 +278,31 @@ class CatGAN(utils.BaseModel):
                 g_optim.zero_grad()
                 d_out_f = self.D(fx)
                 g_cost = utils.CategoricalCrossentropyUslSeparated(d_out_f, alpha_ent, alpha_avg)
-                self.log['g_loss'].append(g_cost.detach().cpu().item())
+                g_cost_list = [g_cost]
+                g_cost_list = [e.detach().cpu().item() for e in g_cost_list]
+                for j in range(len(g_cost_list)):
+                    gl[j] += g_cost_list[j]
+                self.log['g_loss'].append(g_cost_list[0])
                 g_cost.backward()
                 g_optim.step()
 
-                if num_iter % 200 == 0:
-                    line = 'Epoch: {}, Iter: {}, Dloss: {:.4f}, Gloss: {:.4f}'.format(
-                        epoch, num_iter, d_cost.cpu().detach().numpy(), g_cost.cpu().detach().numpy())
-                    print(line)
-                    self.log2file(line)
+                #if num_iter % 200 == 0:
+                #    line = 'Epoch: {}, Iter: {}, Dloss: {:.4f}, Gloss: {:.4f}'.format(
+                #        epoch, num_iter, d_cost.cpu().detach().numpy(), g_cost.cpu().detach().numpy())
+                #    print(line)
+                #    self.log2file(line)
             # end of epoch
-            print('Time taken for Epoch %d: %.2fs' % (epoch, epoch_timer.elapsed()))
+            dl /= len(uloader)
+            gl /= len(uloader)
+
             if supervised_prob > 0.01:
                 supervised_prob = max(supervised_prob - 0.05, 0.01)
             if (epoch >= lr_anneal_epoch) and (epoch % lr_anneal_every_epoch == 0):
                 lr *= lr_anneal_factor
+            line = "Epoch=%d Time=%.2f LR=%.5f\n" % (epoch, epoch_timer.elapsed(), lr) +\
+                "Dlosses: " + str(dl) + "\nGlosses: " + str(gl) + '\n'
+            print(line)
+            self.log2file(line)
 
             if epoch % 100 == 0:
                 self.save_model(self.save_dir, epoch, *self.modules)
@@ -298,7 +314,7 @@ class CatGAN(utils.BaseModel):
             
             if epoch % eval_epoch == 0:
                 acc = self.evaluate(testloader)
-                line = "AccEval=%.5f" % acc
+                line = "AccEval=%.5f\n" % acc
                 print(line)
                 self.log2file(line)
 
@@ -319,9 +335,9 @@ class CatGAN(utils.BaseModel):
         elif self.config.dbname == 'SVHN':
             import models.cifar10 as nets
 
-        self.G = nets.DCGAN_G(self.z_dim, nchannel)
+        self.G = nets.G(self.z_dim, nchannel)
         # self.G = nets.OfficialGenerator(self.z_dim, nchannel)
-        self.D = nets.DCGAN_D(nchannel, self.nclass)
+        self.D = nets.D(nchannel, self.nclass)
         networks = [self.G, self.D]
         for i in networks:
             i.apply(utils.WeightInit)
