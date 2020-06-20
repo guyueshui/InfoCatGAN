@@ -183,3 +183,41 @@ class DCGAN_D(nn.Module):
     def forward(self, x):
         x = self.conv(x).squeeze()
         return x
+
+
+class DCGAN_CATFD(nn.Module):
+    def __init__(self, in_shape:tuple, out_dim:int):
+        super(DCGAN_CATFD, self).__init__()
+        in_dim, h, w = in_shape
+        self.out_dim = out_dim
+        assert h == w
+        D_h_size = 128
+
+        layers = []
+        layers += [
+            nn.Conv2d(in_dim, D_h_size, 4,2,1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+        ]
+        image_size_new = h // 2
+        mult = 1
+        while image_size_new > 4:
+            layers += [
+                nn.Conv2d(D_h_size*mult, D_h_size*(2*mult), 4,2,1, bias=False),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.BatchNorm2d(D_h_size*2*mult),
+                GaussianNoiseLayer(0.3),
+            ]
+            image_size_new = image_size_new // 2
+            mult *= 2
+        # torch.Size([D_h_size*mult, 4, 4])
+
+        layers += [
+            nn.Conv2d(D_h_size*mult, out_dim, 4,1,0, bias=False),
+        ]
+        self.conv = nn.Sequential(*layers)
+        self.softmax = nn.Softmax(dim=1)
+    
+    def forward(self, x):
+        x = self.conv(x).view(-1, self.out_dim)
+        x = self.softmax(x)
+        return x
