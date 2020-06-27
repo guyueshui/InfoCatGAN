@@ -135,7 +135,7 @@ def get_activations(files, model, batch_size=50, dims=2048,
     return pred_arr
 
 def get_activations_fork(all_image, model, batch_size=50, dims=2048,
-                    cuda=False, verbose=False):
+                    device=None, verbose=False):
     model.eval()
 
     if batch_size > len(all_image):
@@ -159,8 +159,8 @@ def get_activations_fork(all_image, model, batch_size=50, dims=2048,
         # images /= 255
 
         batch = torch.stack(images).type(torch.FloatTensor)
-        if cuda:
-            batch = batch.cuda()
+        if device is not None:
+            batch = batch.to(device)
 
         pred = model(batch)[0]
 
@@ -258,7 +258,7 @@ def calculate_activation_statistics(files, model, batch_size=50,
     return mu, sigma
 
 def calculate_activation_statistics_fork(all_image, model, batch_size=50,
-                                    dims=2048, cuda=False, verbose=False):
+                                    dims=2048, device=None, verbose=False):
     """Calculation of the statistics used by the FID.
     Params:
     -- all_image   : List of image tensors with shape 3xHxW
@@ -276,7 +276,7 @@ def calculate_activation_statistics_fork(all_image, model, batch_size=50,
     -- sigma : The covariance matrix of the activations of the pool_3 layer of
                the inception model.
     """
-    act = get_activations_fork(all_image, model, batch_size, dims, cuda, verbose)
+    act = get_activations_fork(all_image, model, batch_size, dims, device, verbose)
     mu = np.mean(act, axis=0)
     sigma = np.cov(act, rowvar=False)
     return mu, sigma
@@ -315,17 +315,17 @@ def calculate_fid_given_paths(paths, batch_size, cuda, dims):
 
     return fid_value
 
-def calculate_fid_given_img_tensor(fake, real, batch_size, cuda, dims):
+def calculate_fid_given_img_tensor(fake, real, batch_size, device, dims):
     block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[dims]
 
     model = InceptionV3([block_idx])
-    if cuda:
-        model.cuda()
+    if device is not None:
+        model.to(device)
 
     m1, s1 = calculate_activation_statistics_fork(fake, model, batch_size,
-                                         dims, cuda)
+                                         dims, device)
     m2, s2 = calculate_activation_statistics_fork(real, model, batch_size,
-                                         dims, cuda)
+                                         dims, device)
     fid_value = calculate_frechet_distance(m1, s1, m2, s2)
 
     return fid_value

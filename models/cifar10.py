@@ -178,7 +178,6 @@ class DCGAN_D(nn.Module):
             nn.Sigmoid()
         ]
         self.conv = nn.Sequential(*layers)
-        self.softmax = nn.Softmax(dim=1)
     
     def forward(self, x):
         x = self.conv(x).squeeze()
@@ -211,13 +210,19 @@ class DCGAN_CATFD(nn.Module):
             mult *= 2
         # torch.Size([D_h_size*mult, 4, 4])
 
-        layers += [
+        self.body = nn.Sequential(*layers)
+        self.dis_head = nn.Sequential(
+            nn.Conv2d(D_h_size*mult, 1, 4,1,0, bias=False),
+            nn.Sigmoid()
+        )
+        self.cat_head = nn.Sequential(
             nn.Conv2d(D_h_size*mult, out_dim, 4,1,0, bias=False),
-        ]
-        self.conv = nn.Sequential(*layers)
+        )
         self.softmax = nn.Softmax(dim=1)
     
     def forward(self, x):
-        x = self.conv(x).view(-1, self.out_dim)
-        x = self.softmax(x)
-        return x
+        feat = self.body(x)
+        dis_out = self.dis_head(feat)
+        cat_out = self.cat_head(feat).view(-1, self.out_dim)
+        # logits = self.softmax(cat_out)
+        return dis_out, cat_out

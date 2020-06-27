@@ -17,6 +17,8 @@ parser.add_argument('--instance_noise', action='store_true', help='Whether to us
 #parser.add_argument('--fid', action='store_true', help='Whether to compute FID score.')
 parser.add_argument('--nlabeled', type=int, default=100)
 parser.add_argument('--dbname', type=str, default='MNIST')
+parser.add_argument('--fid', action='store_true', help="Whether compute fid score.")
+parser.add_argument('--tag', type=str, default='default', help="Extra info for experiment.")
 
 
 def GetConfig():

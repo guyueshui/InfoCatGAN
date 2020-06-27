@@ -2,17 +2,32 @@ import torch, numpy as np
 import os, time
 import torchvision.utils as vutils
 import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from config import GetConfig
 import utils
 
+lr = 1e-3
+lr_anneal_factor = 0.995
+lr_anneal_epoch = 350
+lr_anneal_every_epoch = 1
+alpha_decay = 9e-4
+alpha_ent = 0.3
+alpha_avg = 1e-3
+epoch_g = 300   # after this epoch, some of generated samples will be used as real
+vis_epoch = 2
+eval_epoch = 1
+
+tot_timer = utils.ETimer()
+epoch_timer = utils.ETimer()
 
 class CatGAN(utils.BaseModel):
     def __init__(self, config):
         super(CatGAN, self).__init__(config)
         self.nclass = 10
-        self.z_dim = 128
+        self.z_dim = 128 + 15
         self.train_set = utils.GetData(config.dbname, config.data_root, train=True)
         self.test_set = utils.GetData(config.dbname, config.data_root, train=False)
         self.log2file(">>> dataset info")
@@ -25,6 +40,10 @@ class CatGAN(utils.BaseModel):
         self.log['g_loss'] = []
         self.log['fid'] = []
         self.log['ent'] = []
+        self.log['acc'] = []
+
+        self.testloader = DataLoader(self.test_set, batch_size=100, num_workers=4)
+        self.fix_noise = torch.randn(100, self.z_dim, device=self.device)
 
         self.modules = self.build_model()
     
@@ -36,26 +55,13 @@ class CatGAN(utils.BaseModel):
     
     def train(self):
         dv = self.device
-        lr = 2e-4
-        lr_anneal_factor = 0.995
-        lr_anneal_epoch = 300
-        lr_anneal_every_epoch = 1
-        alpha_decay = 1e-4
-        alpha_ent = 1.
-        alpha_avg = 1e-2
-        eval_epoch = 5
-        vis_epoch = 10
-
-        tot_timer = utils.ETimer()
-        epoch_timer = utils.ETimer()
-
-        testloader = DataLoader(self.test_set, batch_size=100, num_workers=4)
-        fix_noise = torch.randn(100, self.z_dim, device=dv)
+        bce = nn.BCELoss().to(dv)
 
         """
         train TMD
         """
         batch_size_u = 100
+        global lr
 
         # Training...
         print('-'*25)
@@ -65,57 +71,80 @@ class CatGAN(utils.BaseModel):
         tot_timer.reset()
         for epoch in range(1, 1 + self.config.num_epoch):
             epoch_timer.reset()
-            g_optim = optim.Adam(self.G.parameters(), lr=2*lr, betas=(0.5, 0.999))
+            g_optim = optim.Adam(self.G.parameters(), lr=lr, betas=(0.5, 0.999))
             d_optim = optim.Adam(self.D.parameters(), lr=lr, betas=(0.5, 0.999), weight_decay=alpha_decay)
 
             uloader = DataLoader(self.train_set, batch_size=batch_size_u, shuffle=True, num_workers=4, drop_last=True)
+            dl = np.zeros(5)
+            gl = np.zeros(3)
             for num_iter, (ux, _) in enumerate(uloader, 1):
                 # Prepare data.
                 ux = ux.to(dv)
 
                 # Update D.
                 d_optim.zero_grad()
-                d_out_u = self.D(ux)
-                d_cost_real = utils.CategoricalCrossentropyUslSeparated(d_out_u, alpha_ent, alpha_avg)
+                dis_out, d_out_u = self.D(ux)
+                d_cost_real = utils.CategoricalCrossentropyUslSeparated(
+                    F.softmax(d_out_u, dim=1), alpha_ent, alpha_avg
+                )
+                labels = torch.full_like(dis_out, 1, device=dv)
+                d_cost_dis_real = bce(dis_out, labels)
 
+                # prepare fake data
                 noise = torch.randn(batch_size_u, self.z_dim, device=dv)
                 fx = self.G(noise)
-                d_out_f = self.D(fx.detach())
-                d_cost_fake = utils.Entropy(d_out_f)
-
-                d_cost = d_cost_real - alpha_ent*d_cost_fake
-                self.log['d_loss'].append(d_cost.detach().cpu().item())
+                dis_out_f, d_out_f = self.D(fx.detach())
+                d_cost_fake = utils.Entropy(F.softmax(d_out_f, dim=1))
+                labels = torch.full_like(dis_out_f, 0, device=dv)
+                d_cost_dis_fake = bce(dis_out_f, labels)
+                d_cost = d_cost_dis_real + d_cost_dis_fake + (d_cost_real - alpha_ent*d_cost_fake)
+                
+                d_cost_list = [d_cost, d_cost_dis_real, d_cost_dis_fake, d_cost_real, d_cost_fake]
+                d_cost_list = [e.detach().cpu().item() for e in d_cost_list]
+                self.log['d_loss'].append(d_cost_list[0])
+                for j in range(len(d_cost_list)):
+                    dl[j] += d_cost_list[j]
                 d_cost.backward()
                 d_optim.step()
                 
                 # Update G.
                 g_optim.zero_grad()
-                d_out_f = self.D(fx)
-                g_cost = utils.CategoricalCrossentropyUslSeparated(d_out_f, alpha_ent, alpha_avg)
-                self.log['g_loss'].append(g_cost.detach().cpu().item())
+                dis_out_fake, d_out_f_g = self.D(fx)
+                g_cost_cat = utils.CategoricalCrossentropyUslSeparated(
+                    F.softmax(d_out_f_g, dim=1), alpha_ent, alpha_avg
+                )
+                labels = torch.full_like(dis_out_fake, 1, device=dv)
+                g_cost_dis = bce(dis_out_fake, labels)
+                g_cost = g_cost_dis + g_cost_cat
+                g_cost_list = [g_cost, g_cost_dis, g_cost_cat]
+                g_cost_list = [e.detach().cpu().item() for e in g_cost_list]
+                for j in range(len(g_cost_list)):
+                    gl[j] += g_cost_list[j]
+                self.log['g_loss'].append(g_cost_list[0])
                 g_cost.backward()
                 g_optim.step()
-
-                if num_iter % 200 == 0:
-                    line = 'Epoch: {}, Iter: {}, Dloss: {:.4f}, Gloss: {:.4f}'.format(
-                        epoch, num_iter, d_cost.cpu().detach().numpy(), g_cost.cpu().detach().numpy())
-                    print(line)
-                    self.log2file(line)
             # end of epoch
-            print('Time taken for Epoch %d: %.2fs' % (epoch, epoch_timer.elapsed()))
+            dl /= len(uloader)
+            gl /= len(uloader)
+
             if (epoch >= lr_anneal_epoch) and (epoch % lr_anneal_every_epoch == 0):
                 lr *= lr_anneal_factor
+            line = "Epoch=%d Time=%.2f LR=%.5f\n" % (epoch, epoch_timer.elapsed(), lr) +\
+                "Dlosses: " + str(dl) + "\nGlosses: " + str(gl) + '\n'
+            print(line)
+            self.log2file(line)
 
             if epoch % 100 == 0:
                 self.save_model(self.save_dir, epoch, *self.modules)
 
-            if epoch % 5 == 0:
+            if epoch % vis_epoch == 0:
                 with torch.no_grad():
-                    image_gen = self.G(fix_noise)
-                    vutils.save_image(image_gen, self.save_dir + '/fake-epoch-{}.png'.format(epoch), nrow=10)
+                    image_gen = self.G(self.fix_noise)
+                    vutils.save_image(image_gen, self.save_dir + '/fake-epoch-{}.png'.format(epoch), nrow=10, normalize=True)
             
-            if epoch % 1 == 0:
-                acc = self.evaluate(testloader, True)
+            if epoch % eval_epoch == 0:
+                acc = self.evaluate(self.testloader, True)
+                self.log['acc'].append(acc)
                 line = "AccEval=%.5f" % acc
                 print(line)
                 self.log2file(line)
@@ -130,28 +159,12 @@ class CatGAN(utils.BaseModel):
 
 
     def semi_train(self, num_labeled):
-
         dv = self.device
-        lr = 1e-3
-        lr_anneal_factor = 0.995
-        lr_anneal_epoch = 300
-        lr_anneal_every_epoch = 1
-        alpha_decay = 1e-4
-        alpha_ent = 0.3
-        alpha_avg = 1e-3
-        eval_epoch = 5
-        vis_epoch = 5
-
-        tot_timer = utils.ETimer()
-        epoch_timer = utils.ETimer()
-
-        testloader = DataLoader(self.test_set, batch_size=100, num_workers=4)
-        fix_noise = torch.randn(100, self.z_dim, device=dv)
 
         """
         pretrain D
         """
-        pre_nepoch = 0 if num_labeled > 100 else 30
+        pre_nepoch = 0 if num_labeled > 100 else 0
         pre_batch_size_l = min(num_labeled, 100)
         pre_batch_size_u = 500
         pre_lr = 3e-4
@@ -180,12 +193,11 @@ class CatGAN(utils.BaseModel):
                 d_cost.backward()
                 d_optim.step()
                 
-            acc = self.evaluate(testloader)
+            acc = self.evaluate(self.testloader)
             line = "-- Pretrained acc at epoch %d: %.5f" % (epoch, acc)
             print(line)
             self.log2file(line)
 
-            
 
         """
         train TMD
@@ -286,11 +298,12 @@ class CatGAN(utils.BaseModel):
 
             if epoch % vis_epoch == 0:
                 with torch.no_grad():
-                    image_gen = self.G(fix_noise)
-                    vutils.save_image(image_gen, self.save_dir + '/fake-epoch-{}.png'.format(epoch), nrow=10)
+                    image_gen = self.G(self.fix_noise)
+                    vutils.save_image(image_gen, self.save_dir + '/fake-epoch-{}.png'.format(epoch), nrow=10, normalize=True)
             
             if epoch % eval_epoch == 0:
-                acc = self.evaluate(testloader)
+                acc = self.evaluate(self.testloader)
+                self.log['acc'].append(acc)
                 line = "AccEval=%.5f\n" % acc
                 print(line)
                 self.log2file(line)
@@ -304,11 +317,10 @@ class CatGAN(utils.BaseModel):
 
 
     def build_model(self):
-        nchannel = self.train_set[0][0].size(0)
-        import models.mnist as nets
-        self.G = nets.G(self.z_dim, nchannel)
-        # self.G = nets.OfficialGenerator(self.z_dim, nchannel)
-        self.D = nets.D(nchannel, self.nclass)
+        c,h,w = self.train_set[0][0].size()
+        import models.cifar10 as nets
+        self.G = nets.DCGAN_G(self.z_dim, (c,h,w))
+        self.D = nets.DCGAN_CATFD((c,h,w), self.nclass)
         networks = [self.G, self.D]
         for i in networks:
             i.apply(utils.WeightInit)
@@ -321,7 +333,8 @@ class CatGAN(utils.BaseModel):
         for tx, ty in testloader:
             tx = tx.to(self.device)
             with torch.no_grad():
-                pred = self.D(tx).argmax(axis=1).view(-1)
+                _, pred = self.D(tx)
+                pred = pred.argmax(axis=1).view(-1)
                 preds.append(pred)
                 targets.append(ty)
         preds = torch.cat(preds, axis=-1)
@@ -335,14 +348,13 @@ class CatGAN(utils.BaseModel):
         
         
 
-
 if __name__ == '__main__':
     """
     load general configs, custom config should go here, once ARGS
     passed to the gan object, it can not be changed
     """
     ARGS = GetConfig()
-    ARGS.nlabeled = 100
+    assert (ARGS.dbname in ['SVHN', 'CIFAR10'])
     
     ARGS.num_epoch = 500
     if ARGS.seed == -1:
@@ -352,10 +364,9 @@ if __name__ == '__main__':
     np.set_printoptions(precision=4)
     torch.manual_seed(ARGS.seed)
     torch.set_default_tensor_type(torch.FloatTensor)
-    #torch.cuda.empty_cache()
 
     gan = CatGAN(ARGS)
-    #gan.load_model('results/MNIST.nlabeled100.seed1592412420.0618-00:47/model-epoch-1000.pt', *gan.modules)
+    #gan.load_model('results/FashionMNIST/CatGAN/nlabeled100.seed1.default/model-epoch-500.pt', *gan.modules)
     gan.Train(ARGS.nlabeled)
 
     if ARGS.fid:
@@ -367,6 +378,6 @@ if __name__ == '__main__':
                 img_tensor = gan.G(noise)
                 img_list = [i for i in img_tensor]
                 gen_imgs.extend(img_list)
-        fid_value = utils.ComputeFID(gen_imgs, gan.train_set)
+        fid_value = utils.ComputeFID(gen_imgs, gan.train_set, gan.device)
         print("-- FID score %.4f" % fid_value)
 

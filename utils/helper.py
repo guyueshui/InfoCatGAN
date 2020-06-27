@@ -21,14 +21,14 @@ class BaseModel(object):
             raise IndexError('Invalid GPU index')
 
         save_dir = os.path.join('results', config.dbname, self.__class__.__name__)
-        save_dir += '.nlabeled' + str(config.nlabeled)
+        save_dir += '/nlabeled' + str(config.nlabeled)
         save_dir += '.seed' + str(config.seed)
-        save_dir += '.' + t.strftime("%m%d-%H:%M")
+        save_dir += '.' + config.tag
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         self.save_dir = save_dir
 
-        logging.basicConfig(filename=save_dir + '/run.log', 
+        logging.basicConfig(filename=save_dir + '/run' + t.strftime("%m%d-%H:%M") + '.log', 
                             filemode='w', format="%(message)s",
                             level=logging.INFO)
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -38,7 +38,7 @@ class BaseModel(object):
         for item in config.__dict__:
             line = item + ": {}".format(config.__dict__[item])
             self.logger.info(line)
-        self.logger.info("<<< -------------------------")
+        self.logger.info("<<< -------------------------\n")
         
     
     def log2file(self, msg):
@@ -57,6 +57,9 @@ class BaseModel(object):
         for m in models:
             m.load_state_dict(params[m.__class__.__name__])
         print("-- load model from ", fname)
+    
+    def raw_classify(self, x):
+        raise NotImplementedError
 
 
 def Onehot(x, nclass :int):
@@ -117,4 +120,9 @@ def plot_loss(log: dict, path: str):
     plt.legend(loc='upper right')
     plt.tight_layout()
     plt.savefig(path + '/gan_loss.png')
+    plt.close('all')
+    plt.plot(log['acc'], linewidth=1)
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.savefig(path + '/acc.png')
     plt.close('all')

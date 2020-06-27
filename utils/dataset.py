@@ -44,6 +44,10 @@ def GetData(dbname, data_root, train=True):
     if dbname == 'MNIST':
         trans = transforms.ToTensor()
         dataset = dsets.MNIST(data_root, train=train, transform=trans, download=True)
+    
+    elif dbname == 'FashionMNIST':
+        trans = transforms.ToTensor()
+        dataset = dsets.FashionMNIST(data_root, train=train, transform=trans, download=True)
 
     elif dbname == 'SVHN':
         trans = transforms.Compose([
