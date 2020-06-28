@@ -139,7 +139,7 @@ class Natsu_QHead(nn.Module):
       nn.LeakyReLU(0.1, True)
     )
 
-    self.conv_disc = nn.Conv2d(128, disc_dim, 1)
+    self.conv_disc = nn.Conv2d(128, 10*disc_dim, 1)
     self.conv_mu = nn.Conv2d(128, conc_dim, 1)
     self.conv_var = nn.Conv2d(128, conc_dim, 1)
 

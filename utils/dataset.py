@@ -51,8 +51,8 @@ def GetData(dbname, data_root, train=True):
 
     elif dbname == 'SVHN':
         trans = transforms.Compose([
-            transforms.Resize(34),
-            transforms.CenterCrop(32),
+            #transforms.Resize(34),
+            #transforms.CenterCrop(32),
             transforms.ToTensor(),
             transforms.Normalize([.5,.5,.5], [.5,.5,.5])
         ])

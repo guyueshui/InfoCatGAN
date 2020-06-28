@@ -17,9 +17,9 @@ lr_anneal_every_epoch = 1
 alpha_decay = 1e-4
 alpha_ent = 0.3
 alpha_avg = 1e-3
-epoch_g = 150   # after this epoch, some of generated samples will be used as real
+epoch_g = 100   # after this epoch, some of generated samples will be used as real
 vis_epoch = 2
-eval_epoch = 1
+eval_epoch = 2
 
 tot_timer = utils.ETimer()
 epoch_timer = utils.ETimer()
@@ -48,15 +48,24 @@ class InfoGAN(utils.BaseModel):
 
         self.testloader = DataLoader(self.test_set, batch_size=100, num_workers=4)
         fix_z = torch.randn(100, self.z_dim, device=self.device)
-        fix_con_c = torch.FloatTensor(100, self.n_con_c).to(self.device)
-        fix_con_c.uniform_(-1, 1)
+        con_c = []
+        start = -torch.rand(1, self.n_con_c)
+        end = torch.rand(1, self.n_con_c)
+        steps = np.linspace(0, 1, 100)
+        for s in steps:
+            con_c.append(torch.lerp(start, end, s))
+        fix_con_c = torch.cat(con_c, dim=0).to(self.device)
 
         fix_code = torch.as_tensor(
             np.arange(self.nclass).repeat(10), device=self.device
         ).long()
         fix_code_onehot = utils.Onehot(fix_code, self.nclass)
+        #onehots = [fix_code_onehot]
+        #for _ in range(self.n_dis_c - 1):
+        #    code = torch.randint(self.nclass, size=(100,), device=self.device)
+        #    onehots.append(utils.Onehot(code, self.nclass))
+            
         self.fix_noise = torch.cat([fix_z] + [fix_code_onehot]*self.n_dis_c + [fix_con_c], dim=1)
-
         self.modules = self.build_model()
 
     def Train(self, num_labeled=0):
@@ -92,7 +101,7 @@ class InfoGAN(utils.BaseModel):
         """
         Pretrain D
         """
-        pre_epoch = 0 if num_labeled <= 100 else 0
+        pre_epoch = 0 if num_labeled <= 100 else 10
         pre_batch_size_l = min(num_labeled, 128)
         pre_batch_size_u = 512
         pre_lr = 3e-4
@@ -123,10 +132,14 @@ class InfoGAN(utils.BaseModel):
                 pre_d_optim.zero_grad()
                 q_out_u, _, _ = self.Q(self.FD(ux))
                 q_out_l, _, _ = self.Q(self.FD(lx))
+                # Use first categorical code as object identity.
+                q_out_u = q_out_u[:,:self.nclass]
+                q_out_l = q_out_l[:,:self.nclass]
+                # ATTENTION!!!
                 pre_d_cost_ent = utils.Entropy(F.softmax(q_out_u, dim=1))
                 pre_d_cost_ment = utils.MarginalEntropy(F.softmax(q_out_u, dim=1))
                 pre_d_cost_bind = ce(q_out_l, ly)
-                pre_d_cost = pre_d_cost_ent - pre_d_cost_ment + 1.1*pre_d_cost_bind
+                pre_d_cost = pre_d_cost_ent - .01*pre_d_cost_ment + 1.1*pre_d_cost_bind
                 pre_d_cost.backward()
                 pre_d_optim.step()
             
@@ -151,37 +164,53 @@ class InfoGAN(utils.BaseModel):
         tot_timer.reset()
         for epoch in range(1, 1 + self.config.num_epoch):
             epoch_timer.reset()
-            g_optim = optim.Adam(g_param_group, lr=g_lr, betas=(0.5, 0.999))
+            
+            g_optim = optim.Adam(g_param_group, lr=g_lr, betas=(0.5, 0.999), weight_decay=1e-2)
             d_optim = optim.Adam(d_param_group, lr=d_lr, betas=(0.5, 0.999))
             q_optim = optim.Adam(self.Q.parameters(), lr=g_lr, betas=(0.5, 0.999), weight_decay=alpha_decay)
 
             uloader = DataLoader(self.train_set, batch_size=batch_size_u, shuffle=True, num_workers=4, drop_last=True)
             lloader = DataLoader(labeled_set, batch_size=batch_size_l, shuffle=True, num_workers=2, drop_last=True)
             liter = iter(lloader)
+            uiter = iter(uloader)
+
+            num_labeled_batch = 0
+            if supervised_prob >= 0.5:
+                tot_iters = 100
+            else:
+                tot_iters = len(uloader) + len(lloader)
+
             dl = np.zeros(3)
             gl = np.zeros(6)
-            for num_iter, (ux, _) in enumerate(uloader, 1):
+            for num_iter in range(tot_iters):
                 # Prepare data.
-                ux = ux.to(dv)
                 is_labeled_batch = (torch.bernoulli(torch.tensor(supervised_prob)) == 1)
                 if is_labeled_batch:
                     try:
-                        lbatch = next(liter)
+                        batch = next(liter)
                     except StopIteration:
                         liter = iter(lloader)
-                        lbatch = next(liter)
+                        batch = next(liter)
+                    finally:
+                        num_labeled_batch += 1
+                else:
+                    try:
+                        batch = next(uiter)
+                    except StopIteration:
+                        uiter = iter(uloader)
+                        batch = next(uiter)
 
-                    lx, ly = [e.to(dv) for e in lbatch]
+                x, y = [e.to(dv) for e in batch]
 
                 # Update D.
                 d_optim.zero_grad()
-                d_body_out_u = self.FD(ux)
-                d_out_u = self.D(d_body_out_u)
-                labels = torch.full_like(d_out_u, 1, device=dv)
-                d_cost_real = bce(d_out_u, labels)
+                d_body_out = self.FD(x)
+                d_out = self.D(d_body_out)
+                labels = torch.full_like(d_out, 1, device=dv)
+                d_cost_real = bce(d_out, labels)
 
                 if is_labeled_batch:
-                    noise, idx = self.generate_noise(z, dis_c, con_c, ly)
+                    noise, idx = self.generate_noise(z, dis_c, con_c, y)
                 else:
                     noise, idx = self.generate_noise(z, dis_c, con_c)
                 idx = torch.LongTensor(idx).to(dv)
@@ -192,8 +221,8 @@ class InfoGAN(utils.BaseModel):
                 # update Q to bind real label if cur_batch is_labeled_batch
                 if is_labeled_batch:
                     q_optim.zero_grad()
-                    disc_logits_real, _, _ = self.Q(self.FD(lx))
-                    qsuper_loss_real = ce(disc_logits_real[:,:self.nclass], ly)
+                    disc_logits_real, _, _ = self.Q(d_body_out.detach())
+                    qsuper_loss_real = ce(disc_logits_real[:,:self.nclass], y)
                     qsuper_loss_real.backward()
                     q_optim.step()
                 elif epoch >= epoch_g:
@@ -238,9 +267,9 @@ class InfoGAN(utils.BaseModel):
                 q_cost_con = utils.LogGaussian(con_c, q_mu, q_var)
 
                 # feature matching loss
-                fmatch_loss = mse(d_body_out_f, d_body_out_u.detach())
+                fmatch_loss = mse(d_body_out_f, d_body_out.detach())
 
-                g_cost = g_cost_dis + q_cost_dis + .5*q_cost_con + .9*fmatch_loss + .9*xent
+                g_cost = g_cost_dis + q_cost_dis + .5*q_cost_con + .0*fmatch_loss + .1*xent
                 g_cost_list = [g_cost, g_cost_dis, q_cost_dis, q_cost_con, fmatch_loss, xent]
                 g_cost_list = [e.detach().cpu().item() for e in g_cost_list]
                 for j in range(len(g_cost_list)):
@@ -250,19 +279,20 @@ class InfoGAN(utils.BaseModel):
                 g_optim.step()
 
             # end of epoch
-            dl /= len(uloader)
-            gl /= len(uloader)
+            dl /= tot_iters
+            gl /= tot_iters
 
             if supervised_prob > 0.1:
-                supervised_prob = max(supervised_prob - 0.1, 0.1)
+                supervised_prob = max(supervised_prob - 0.1, 0.09)
             if (epoch >= lr_anneal_epoch) and (epoch % lr_anneal_every_epoch == 0):
                 lr *= lr_anneal_factor
             line = "Epoch=%d Time=%.2f LR=%.5f\n" % (epoch, epoch_timer.elapsed(), g_lr) +\
                 "Dlosses: " + str(dl) + "\nGlosses: " + str(gl) + '\n'
             print(line)
+            print('labeled batch for Epoch %d: %d/%d' % (epoch, num_labeled_batch, tot_iters))
             self.log2file(line)
 
-            if epoch % 100 == 0:
+            if epoch % 50 == 0:
                 self.save_model(self.save_dir, epoch, *self.modules)
 
             if epoch % vis_epoch == 0:
@@ -292,10 +322,14 @@ class InfoGAN(utils.BaseModel):
         noise_dim = self.z_dim + self.nclass*self.n_dis_c + self.n_con_c
         latent_dim = 256
 
-        self.G = nets.Generator(noise_dim, c)
+        #self.G = nets.Generator(noise_dim, c)
+        #self.FD = nets.Dbody(c, latent_dim)
+        #self.D = nets.Dhead(latent_dim, 1)
+        #self.Q = nets.Qhead(latent_dim, self.n_dis_c, self.n_con_c)
+        self.G = nets.Natsu_Generator(noise_dim, c)
         self.FD = nets.Dbody(c, latent_dim)
-        self.D = nets.Dhead(latent_dim, 1)
-        self.Q = nets.Qhead(latent_dim, self.n_dis_c, self.n_con_c)
+        self.D = nets.Natsu_DHead(latent_dim, 1)
+        self.Q = nets.Natsu_QHead(latent_dim, self.n_dis_c, self.n_con_c)
 
         networks = [self.G, self.FD, self.D, self.Q]
         for i in networks:
@@ -311,7 +345,7 @@ class InfoGAN(utils.BaseModel):
             tx = tx.to(self.device)
             with torch.no_grad():
                 pred, _, _ = self.Q(self.FD(tx))
-                pred = pred.argmax(axis=1).view(-1)
+                pred = pred[:,:self.nclass].argmax(axis=1).view(-1)
                 preds.append(pred)
                 targets.append(ty)
         preds = torch.cat(preds, axis=-1)
@@ -353,7 +387,7 @@ if __name__ == '__main__':
     assert ARGS.dbname in ['SVHN', 'CIFAR10']
     #ARGS.nlabeled = 132
     
-    ARGS.num_epoch = 300
+    ARGS.num_epoch = 150
     if ARGS.seed == -1:
         ARGS.seed = int(time.time())
     
@@ -363,16 +397,28 @@ if __name__ == '__main__':
     torch.set_default_tensor_type(torch.FloatTensor)
 
     gan = InfoGAN(ARGS)
-    #gan.load_model('results/FashionMNIST/InfoCatGAN/nlabeled0.seed1.lamb_info.9/model-epoch-300.pt', *gan.modules)
+    gan.load_model('results/SVHN/InfoGAN/nlabeled1000.seed1.dcgan/model-epoch-300.pt', *gan.modules)
     gan.Train(ARGS.nlabeled)
+    #image_gen = gan.G(gan.fix_noise)
+    #vutils.save_image(image_gen, gan.save_dir + '/fake-final.png', nrow=10, normalize=True)
 
     if ARGS.fid:
         dl = DataLoader(gan.train_set, 100, num_workers=4)
+        dv = gan.device
+        bs = 100
         gen_imgs = []
+        z = torch.FloatTensor(100, gan.z_dim).to(dv)
+        dis_c = torch.FloatTensor(100, gan.n_dis_c*gan.nclass).to(dv)
+        con_c = torch.FloatTensor(100, gan.n_con_c).to(dv)
+        #i = 0
         for _, _ in dl:
-            noise, _ = gan.generate_noise(100)
+            #if i == 10:
+            #    exit(0)
+            noise, _ = gan.generate_noise(z, dis_c, con_c)
             with torch.no_grad():
                 img_tensor = gan.G(noise)
+                #vutils.save_image(img_tensor, gan.save_dir + '/fake-{}.png'.format(i), nrow=10, normalize=True)
+                #i += 1
                 img_list = [i for i in img_tensor]
                 gen_imgs.extend(img_list)
         fid_value = utils.ComputeFID(gen_imgs, gan.train_set, gan.device)
