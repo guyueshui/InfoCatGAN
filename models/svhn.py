@@ -97,6 +97,7 @@ class Natsu_Generator(nn.Module):
     super(Natsu_Generator, self).__init__()
     self.in_dim = in_dim
     self.deconv = nn.Sequential(
+      ReshapeLayer((-1, in_dim, 1, 1)),
       nn.ConvTranspose2d(in_dim, 448, 2, 1, bias=False),
       nn.BatchNorm2d(448),
       nn.ReLU(),
@@ -114,10 +115,26 @@ class Natsu_Generator(nn.Module):
     )
 
   def forward(self, x):
-    x = x.view(-1, self.in_dim, 1, 1)
     x = self.deconv(x)
     return x
 
+class Natsu_DBody(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(Natsu_DBody, self).__init__()
+    self.main = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4,2,1, bias=False),
+      nn.LeakyReLU(0.1, True),
+      nn.Conv2d(64, 128, 4,2,1, bias=False),
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.1, True),
+      nn.Conv2d(128, 256, 4,2,1, bias=False),
+      nn.BatchNorm2d(256),
+      nn.LeakyReLU(0.1, True),
+    )
+  
+  def forward(self, x):
+    x = self.main(x)
+    return x
 
 class Natsu_DHead(nn.Module):
   def __init__(self, in_dim, out_dim):
@@ -149,3 +166,150 @@ class Natsu_QHead(nn.Module):
     mu = self.conv_mu(x).squeeze()
     var = self.conv_var(x).squeeze().exp()
     return disc_logits, mu, var
+  
+
+class Natsu_CATD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(Natsu_CATD, self).__init__()
+    self.main = nn.Sequential(
+      nn.Conv2d(in_dim, 64, 4,2,1, bias=False),
+      nn.LeakyReLU(0.1, True),
+      nn.Conv2d(64, 128, 4,2,1, bias=False),
+      nn.BatchNorm2d(128),
+      nn.LeakyReLU(0.1, True),
+      nn.Conv2d(128, 256, 4,2,1, bias=False),
+      nn.BatchNorm2d(256),
+      nn.LeakyReLU(0.1, True),
+
+      nn.Conv2d(256, 128, 4, bias=False),
+      nn.BatchNorm2d(128),
+      nn.Conv2d(128, out_dim, 1),
+      ReshapeLayer((-1, out_dim)),
+    )
+
+  def forward(self, x):
+    logits = self.main(x)
+    return logits
+
+#=========== following arch from ===================
+# https://github.com/xinario/catgan_pytorch/blob/master/catgan_cifar10.py
+
+nlayers = 64
+
+class XCATG(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(XCATG, self).__init__()
+    self.main = nn.Sequential(
+      ReshapeLayer((-1, in_dim, 1, 1)),
+      nn.ConvTranspose2d(in_dim, nlayers*4, 4,1,0, bias=False), # 4x4
+      nn.BatchNorm2d(nlayers*4),
+      nn.LeakyReLU(0.2, inplace=True),
+
+      nn.ConvTranspose2d(nlayers*4, nlayers*2, 4,2,1, bias=False),  # 8x8
+      nn.BatchNorm2d(nlayers*2),
+      nn.LeakyReLU(0.2, True),
+
+      nn.ConvTranspose2d(nlayers*2, nlayers, 4,2,1, bias=False),  # 16x16
+      nn.BatchNorm2d(nlayers),
+      nn.LeakyReLU(0.2, True),
+
+      nn.ConvTranspose2d(nlayers, out_dim, 4,2,1, bias=False),  # 32x32
+      nn.Tanh()
+    )
+  
+  def forward(self, x):
+    x = self.main(x)
+    return x
+  
+
+class XCATD(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(XCATD, self).__init__()
+    self.main = nn.Sequential(
+      nn.Conv2d(in_dim, nlayers, 4,2,1, bias=False),  # 16x16
+      nn.BatchNorm2d(nlayers),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(nlayers, nlayers*2, 4,2,1, bias=False), # 8x8
+      nn.BatchNorm2d(nlayers*2),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(nlayers*2, nlayers*4, 4,2,1, bias=False), # 4x4
+      nn.BatchNorm2d(nlayers*4),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+      
+      nn.Conv2d(nlayers*4, nlayers*4, 4), # 1x1
+      nn.BatchNorm2d(nlayers*4),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(nlayers*4, out_dim, 1),
+      ReshapeLayer((-1, out_dim)),
+    )
+
+  def forward(self, x):
+    x = self.main(x)
+    return x
+
+class XDbody(nn.Module):
+  def __init__(self, in_dim, out_dim=nlayers*4):
+    super(XDbody, self).__init__()
+    self.main = nn.Sequential(
+      nn.Conv2d(in_dim, nlayers, 4,2,1, bias=False),  # 16x16
+      nn.BatchNorm2d(nlayers),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(nlayers, nlayers*2, 4,2,1, bias=False), # 8x8
+      nn.BatchNorm2d(nlayers*2),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+
+      nn.Conv2d(nlayers*2, nlayers*4, 4,2,1, bias=False), # 4x4
+      nn.BatchNorm2d(nlayers*4),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+      
+      nn.Conv2d(nlayers*4, nlayers*4, 4), # 1x1
+      nn.BatchNorm2d(nlayers*4),
+      nn.LeakyReLU(0.2, True),
+      nn.Dropout(0.5),
+
+      #nn.Conv2d(nlayers*4, out_dim, 1),
+      #ReshapeLayer((-1, out_dim)),
+    )
+  
+  def forward(self, x):
+    x = self.main(x)
+    return x
+
+class XDhead(nn.Module):
+  def __init__(self, in_dim, out_dim):
+    super(XDhead, self).__init__()
+    self.main = nn.Sequential(
+      nn.Conv2d(in_dim, out_dim, 1),
+      nn.Sigmoid()
+    )
+
+  def forward(self, x):
+    x = self.main(x).squeeze()
+    return x
+
+class XQhead(nn.Module):
+  def __init__(self, in_dim, dis_dim, con_dim):
+    super(XQhead, self).__init__()
+    self.disc = nn.Sequential(
+      nn.Conv2d(in_dim, dis_dim, 1),
+      ReshapeLayer((-1, dis_dim))
+    )
+    self.mu = nn.Conv2d(in_dim, con_dim, 1)
+    self.var = nn.Conv2d(in_dim, con_dim, 1)
+  
+  def forward(self, x):
+    logits = self.disc(x)
+    mu = self.mu(x)
+    var = self.var(x).exp()
+    return logits, mu, var

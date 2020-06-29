@@ -160,6 +160,8 @@ class CatGAN(utils.BaseModel):
 
     def semi_train(self, num_labeled):
         dv = self.device
+        ce = nn.CrossEntropyLoss().to(dv)
+        global lr
 
         """
         pretrain D
@@ -220,8 +222,8 @@ class CatGAN(utils.BaseModel):
             uloader = DataLoader(self.train_set, batch_size=batch_size_u, shuffle=True, num_workers=4, drop_last=True)
             lloader = DataLoader(labeled_set, batch_size=batch_size_l, shuffle=True, drop_last=True)
             liter = iter(lloader)
-            dl = np.zeros(3)
-            gl = np.zeros(1)
+            dl = np.zeros(5)
+            gl = np.zeros(3)
             for num_iter, (ux, _) in enumerate(uloader, 1):
                 # Prepare data.
                 ux = ux.to(dv)
@@ -240,22 +242,24 @@ class CatGAN(utils.BaseModel):
                 # Update D.
                 d_optim.zero_grad()
                 d_out_u = self.D(ux)
+                d_out_u = F.softmax(d_out_u, dim=1)
+                d_cost_ent = utils.Entropy(d_out_u)
+                d_cost_ment = utils.MarginalEntropy(d_out_u)
                 
                 if is_labeled_batch:
                     d_out_l = self.D(lx)
-                    d_cost_real = utils.CategoricalCrossentropySslSeparated(
-                        d_out_l, ly, d_out_u, 1, alpha_ent, alpha_avg)
+                    d_cost_bind = ce(d_out_l, ly)
                 else:
-                    d_cost_real = utils.CategoricalCrossentropyUslSeparated(
-                        d_out_u, alpha_ent, alpha_avg)
+                    d_cost_bind = torch.tensor(0)
                 
                 noise = torch.randn(batch_size_u, self.z_dim, device=dv)
                 fx = self.G(noise)
                 d_out_f = self.D(fx.detach())
+                d_out_f = F.softmax(d_out_f, dim=1)
                 d_cost_fake = utils.Entropy(d_out_f)
 
-                d_cost = d_cost_real - alpha_ent*d_cost_fake
-                d_cost_list = [d_cost, d_cost_real, d_cost_fake]
+                d_cost = d_cost_ent - d_cost_ment - d_cost_fake + 1.1*d_cost_bind
+                d_cost_list = [d_cost, d_cost_ent, d_cost_ment, d_cost_fake, d_cost_bind]
                 d_cost_list = [e.detach().cpu().item() for e in d_cost_list]
                 for j in range(len(d_cost_list)):
                     dl[j] += d_cost_list[j]
@@ -266,8 +270,11 @@ class CatGAN(utils.BaseModel):
                 # Update G.
                 g_optim.zero_grad()
                 d_out_f = self.D(fx)
-                g_cost = utils.CategoricalCrossentropyUslSeparated(d_out_f, alpha_ent, alpha_avg)
-                g_cost_list = [g_cost]
+                d_out_f = F.softmax(d_out_f, dim=1)
+                g_cost_ent = utils.Entropy(d_out_f)
+                g_cost_ment = utils.MarginalEntropy(d_out_f)
+                g_cost = g_cost_ent - g_cost_ment
+                g_cost_list = [g_cost, g_cost_ent, g_cost_ment]
                 g_cost_list = [e.detach().cpu().item() for e in g_cost_list]
                 for j in range(len(g_cost_list)):
                     gl[j] += g_cost_list[j]
@@ -318,9 +325,11 @@ class CatGAN(utils.BaseModel):
 
     def build_model(self):
         c,h,w = self.train_set[0][0].size()
-        import models.cifar10 as nets
-        self.G = nets.DCGAN_G(self.z_dim, (c,h,w))
-        self.D = nets.DCGAN_CATFD((c,h,w), self.nclass)
+        import models.svhn as nets
+        #self.G = nets.DCGAN_G(self.z_dim, (c,h,w))
+        #self.D = nets.DCGAN_CATFD((c,h,w), self.nclass)
+        self.G = nets.XCATG(self.z_dim, c)
+        self.D = nets.XCATD(c, self.nclass)
         networks = [self.G, self.D]
         for i in networks:
             i.apply(utils.WeightInit)
@@ -333,7 +342,7 @@ class CatGAN(utils.BaseModel):
         for tx, ty in testloader:
             tx = tx.to(self.device)
             with torch.no_grad():
-                _, pred = self.D(tx)
+                pred = self.D(tx)
                 pred = pred.argmax(axis=1).view(-1)
                 preds.append(pred)
                 targets.append(ty)
@@ -366,8 +375,8 @@ if __name__ == '__main__':
     torch.set_default_tensor_type(torch.FloatTensor)
 
     gan = CatGAN(ARGS)
-    #gan.load_model('results/FashionMNIST/CatGAN/nlabeled100.seed1.default/model-epoch-500.pt', *gan.modules)
-    gan.Train(ARGS.nlabeled)
+    gan.load_model('results/SVHN/CatGAN/nlabeled1000.seed1.XCAT/model-epoch-300.pt', *gan.modules)
+    #gan.Train(ARGS.nlabeled)
 
     if ARGS.fid:
         dl = DataLoader(gan.train_set, 100, num_workers=4)

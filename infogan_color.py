@@ -9,15 +9,14 @@ from torch.utils.data import DataLoader
 from config import GetConfig
 import utils
 
-g_lr = 1e-3
-d_lr = 2e-4
+lr = 1e-3
 lr_anneal_factor = 0.995
-lr_anneal_epoch = 9999
+lr_anneal_epoch = 200
 lr_anneal_every_epoch = 1
 alpha_decay = 1e-4
 alpha_ent = 0.3
 alpha_avg = 1e-3
-epoch_g = 100   # after this epoch, some of generated samples will be used as real
+epoch_g = 190   # after this epoch, some of generated samples will be used as real
 vis_epoch = 2
 eval_epoch = 2
 
@@ -80,6 +79,7 @@ class InfoGAN(utils.BaseModel):
     def semi_train(self, num_labeled):
         dv = self.device
         bs = 128
+        global lr
 
         z = torch.FloatTensor(bs, self.z_dim).to(dv)
         dis_c = torch.FloatTensor(bs, self.n_dis_c*self.nclass).to(dv)
@@ -101,7 +101,7 @@ class InfoGAN(utils.BaseModel):
         """
         Pretrain D
         """
-        pre_epoch = 0 if num_labeled <= 100 else 10
+        pre_epoch = 0 if num_labeled <= 100 else 0
         pre_batch_size_l = min(num_labeled, 128)
         pre_batch_size_u = 512
         pre_lr = 3e-4
@@ -165,9 +165,9 @@ class InfoGAN(utils.BaseModel):
         for epoch in range(1, 1 + self.config.num_epoch):
             epoch_timer.reset()
             
-            g_optim = optim.Adam(g_param_group, lr=g_lr, betas=(0.5, 0.999), weight_decay=1e-2)
-            d_optim = optim.Adam(d_param_group, lr=d_lr, betas=(0.5, 0.999))
-            q_optim = optim.Adam(self.Q.parameters(), lr=g_lr, betas=(0.5, 0.999), weight_decay=alpha_decay)
+            g_optim = optim.Adam(g_param_group, lr=lr, betas=(0.5, 0.999))
+            d_optim = optim.Adam(d_param_group, lr=lr*0.2, betas=(0.5, 0.999))
+            q_optim = optim.Adam(self.Q.parameters(), lr=lr, betas=(0.5, 0.999), weight_decay=alpha_decay)
 
             uloader = DataLoader(self.train_set, batch_size=batch_size_u, shuffle=True, num_workers=4, drop_last=True)
             lloader = DataLoader(labeled_set, batch_size=batch_size_l, shuffle=True, num_workers=2, drop_last=True)
@@ -269,7 +269,7 @@ class InfoGAN(utils.BaseModel):
                 # feature matching loss
                 fmatch_loss = mse(d_body_out_f, d_body_out.detach())
 
-                g_cost = g_cost_dis + q_cost_dis + .5*q_cost_con + .0*fmatch_loss + .1*xent
+                g_cost = g_cost_dis + q_cost_dis + .5*q_cost_con + .0*fmatch_loss + .0*xent
                 g_cost_list = [g_cost, g_cost_dis, q_cost_dis, q_cost_con, fmatch_loss, xent]
                 g_cost_list = [e.detach().cpu().item() for e in g_cost_list]
                 for j in range(len(g_cost_list)):
@@ -282,11 +282,11 @@ class InfoGAN(utils.BaseModel):
             dl /= tot_iters
             gl /= tot_iters
 
-            if supervised_prob > 0.1:
-                supervised_prob = max(supervised_prob - 0.1, 0.09)
+            if supervised_prob > 0.15:
+                supervised_prob = max(supervised_prob - 0.1, 0.15)
             if (epoch >= lr_anneal_epoch) and (epoch % lr_anneal_every_epoch == 0):
                 lr *= lr_anneal_factor
-            line = "Epoch=%d Time=%.2f LR=%.5f\n" % (epoch, epoch_timer.elapsed(), g_lr) +\
+            line = "Epoch=%d Time=%.2f LR=%.5f\n" % (epoch, epoch_timer.elapsed(), lr) +\
                 "Dlosses: " + str(dl) + "\nGlosses: " + str(gl) + '\n'
             print(line)
             print('labeled batch for Epoch %d: %d/%d' % (epoch, num_labeled_batch, tot_iters))
@@ -326,10 +326,14 @@ class InfoGAN(utils.BaseModel):
         #self.FD = nets.Dbody(c, latent_dim)
         #self.D = nets.Dhead(latent_dim, 1)
         #self.Q = nets.Qhead(latent_dim, self.n_dis_c, self.n_con_c)
-        self.G = nets.Natsu_Generator(noise_dim, c)
-        self.FD = nets.Dbody(c, latent_dim)
-        self.D = nets.Natsu_DHead(latent_dim, 1)
-        self.Q = nets.Natsu_QHead(latent_dim, self.n_dis_c, self.n_con_c)
+        #self.G = nets.Natsu_Generator(noise_dim, c)
+        #self.FD = nets.Dbody(c, latent_dim)
+        #self.D = nets.Natsu_DHead(latent_dim, 1)
+        #self.Q = nets.Natsu_QHead(latent_dim, self.n_dis_c, self.n_con_c)
+        self.G = nets.XCATG(noise_dim, c)
+        self.FD = nets.XDbody(c, latent_dim)
+        self.D = nets.XDhead(latent_dim, 1)
+        self.Q = nets.XQhead(latent_dim, self.n_dis_c*self.nclass, self.n_con_c)
 
         networks = [self.G, self.FD, self.D, self.Q]
         for i in networks:
@@ -387,7 +391,7 @@ if __name__ == '__main__':
     assert ARGS.dbname in ['SVHN', 'CIFAR10']
     #ARGS.nlabeled = 132
     
-    ARGS.num_epoch = 150
+    ARGS.num_epoch = 300
     if ARGS.seed == -1:
         ARGS.seed = int(time.time())
     
@@ -397,8 +401,8 @@ if __name__ == '__main__':
     torch.set_default_tensor_type(torch.FloatTensor)
 
     gan = InfoGAN(ARGS)
-    gan.load_model('results/SVHN/InfoGAN/nlabeled1000.seed1.dcgan/model-epoch-300.pt', *gan.modules)
-    gan.Train(ARGS.nlabeled)
+    gan.load_model('results/SVHN/InfoGAN/nlabeled1000.seed1593429092.XCAT/model-epoch-300.pt', *gan.modules)
+    #gan.Train(ARGS.nlabeled)
     #image_gen = gan.G(gan.fix_noise)
     #vutils.save_image(image_gen, gan.save_dir + '/fake-final.png', nrow=10, normalize=True)
 
