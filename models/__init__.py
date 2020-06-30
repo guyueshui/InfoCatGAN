@@ -44,6 +44,7 @@ class GaussianNoiseLayer(nn.Module):
             return x + self.noise
 
 class PerforatedUpsample(nn.Module):
+    "Perforated upsample used in CatGAN paper."
     def __init__(self, scale_factor=2):
         super(PerforatedUpsample, self).__init__()
         self.upsample = nn.Upsample(scale_factor=2)

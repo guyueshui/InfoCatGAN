@@ -8,6 +8,7 @@ import matplotlib as mpl
 mpl.use('AGG')
 
 class BaseModel(object):
+    "Base model that wrap some utilities for all implemented models."
     def __init__(self, config):
         self.config = config
 

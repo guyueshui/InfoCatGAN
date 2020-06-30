@@ -36,6 +36,8 @@ def CategoricalCrossentropyOfMean(predictions):
 
 def CategoricalCrossentropySslSeparated(predictions_l, targets,
         predictions_u, alpha_labeled=1., alpha_unlabeled=.3, alpha_average=1e-3):
+    ##NOTE: predictions should be logits for F.cross_entropy while
+    ##      probs for the other, deprecated!
     # for labeled data, minimize CE[p_c(y), y_l]
     celoss = F.cross_entropy(predictions_l, targets).mean()
     # for unlabeled data, minimize H(p(y|x_u))
@@ -65,6 +67,7 @@ def CategoricalAccuracy(predictions, targets, map_to_real=None):
     return acc
 
 def CategoryMatching(predictions, targets, num_class):
+    "Catetory matching described in CatGAN paper."
     predictions = predictions.detach().cpu().squeeze().numpy()
     targets = targets.detach().cpu().squeeze().numpy()
     assert predictions.shape == targets.shape
