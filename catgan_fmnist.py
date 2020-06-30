@@ -373,8 +373,8 @@ if __name__ == '__main__':
     torch.set_default_tensor_type(torch.FloatTensor)
 
     gan = CatGAN(ARGS)
-    gan.load_model('results/FashionMNIST/CatGAN/nlabeled100.seed1.default/model-epoch-300.pt', *gan.modules)
-    #gan.Train(ARGS.nlabeled)
+    #gan.load_model('results/FashionMNIST/CatGAN/nlabeled100.seed1.default/model-epoch-300.pt', *gan.modules)
+    gan.Train(ARGS.nlabeled)
 
     if ARGS.fid:
         dl = DataLoader(gan.train_set, 100, num_workers=4)

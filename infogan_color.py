@@ -401,8 +401,8 @@ if __name__ == '__main__':
     torch.set_default_tensor_type(torch.FloatTensor)
 
     gan = InfoGAN(ARGS)
-    gan.load_model('results/SVHN/InfoGAN/nlabeled1000.seed1593429092.XCAT/model-epoch-300.pt', *gan.modules)
-    #gan.Train(ARGS.nlabeled)
+    #gan.load_model('results/SVHN/InfoGAN/nlabeled1000.seed1593429092.XCAT/model-epoch-300.pt', *gan.modules)
+    gan.Train(ARGS.nlabeled)
     #image_gen = gan.G(gan.fix_noise)
     #vutils.save_image(image_gen, gan.save_dir + '/fake-final.png', nrow=10, normalize=True)
 

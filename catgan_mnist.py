@@ -352,7 +352,6 @@ if __name__ == '__main__':
     np.set_printoptions(precision=4)
     torch.manual_seed(ARGS.seed)
     torch.set_default_tensor_type(torch.FloatTensor)
-    #torch.cuda.empty_cache()
 
     gan = CatGAN(ARGS)
     #gan.load_model('results/MNIST.nlabeled100.seed1592412420.0618-00:47/model-epoch-1000.pt', *gan.modules)

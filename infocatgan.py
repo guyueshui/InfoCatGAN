@@ -406,11 +406,8 @@ if __name__ == '__main__':
     torch.set_default_tensor_type(torch.FloatTensor)
 
     gan = InfoCatGAN(ARGS)
-    gan.load_model('results/MNIST/InfoCatGAN/nlabeled132.seed1.lamb_info.4/model-epoch-300.pt', *gan.modules)
-    #gan.Train(ARGS.nlabeled)
-
-    #acc = gan.evaluate(gan.testloader, True)
-    #print("-- acc is", acc)
+    #gan.load_model('results/MNIST/InfoCatGAN/nlabeled132.seed1.lamb_info.4/model-epoch-300.pt', *gan.modules)
+    gan.Train(ARGS.nlabeled)
 
     if ARGS.fid:
         dl = DataLoader(gan.train_set, 100, num_workers=4)
